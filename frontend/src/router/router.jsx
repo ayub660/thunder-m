@@ -6,7 +6,8 @@ import { DashboardCards } from "../components/DashboardCards";
 import { NotFound } from "../components/NotFound";
 import { CreateQrForm } from "../components/CreateQrForm";
 import { UserCreate } from "../components/UserCreate";
-import { PaymentCheckout } from "../components/PaymentCheckout";
+import PaymentCheckout from "../components/PaymentCheckout";
+import AmountSelectionPage from "../components/AmountSelectionPage"; // নতুন অ্যামাউন্ট পেজ ইমপোর্ট
 import { WithdrawalForm } from "../components/WithdrawalForm";
 import { Profile } from "../components/Profile";
 import { TransactionsPage } from "../components/TransactionsPage";
@@ -41,7 +42,7 @@ const WithdrawalsWrapper = () => {
     return <div className="p-8 text-center text-gray-500 font-medium">Loading...</div>;
   }
 
-  // রোল অনুযায়ী শুধু সংশ্লিষ্ট কম্পোনেন্ট রিটার্ন করবে
+  // রোল অনুযায়ী শুধু সংশ্লিষ্ট কম্পোনেন্ট রিটার্ন করবে
   return isAdmin ? <WithdrawalsAdmin /> : <WithdrawalForm />;
 };
 
@@ -83,13 +84,19 @@ export const router = createBrowserRouter([
         element: <Profile />,
       },
       {
-        path: ":linkId",
-        element: <PaymentCheckout />,
-      },
-      {
         path: "*",
         element: <NotFound />,
       },
     ],
+  },
+  {
+    // প্রথম পেজ: যেখানে ইউজার অ্যামাউন্ট সিলেক্ট করবে (যেমন: /fxzcv)
+    path: "/:linkId",
+    element: <AmountSelectionPage />,
+  },
+  {
+    // দ্বিতীয় পেজ: যেখানে ইউনিক ইনভয়েস আইডি সহ QR এবং পেমেন্ট হবে (যেমন: /fxzcv/i/09480982-...)
+    path: "/:linkId/i/:invoiceId",
+    element: <PaymentCheckout />,
   },
 ]);

@@ -64,8 +64,8 @@ export const CreateQrForm = () => {
     <div className="p-6 md:p-10 bg-gradient-to-br from-gray-50 via-gray-50/50 to-green-50/20 min-h-screen">
       <div className="max-w-4xl mx-auto space-y-8">
         
-        {/* ছোট ও আকর্ষণীয় পেজ হেডার */}
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white/80 backdrop-blur-md p-5 rounded-3xl border border-gray-100 shadow-xs">
+        {/* পেজ হেডার */}
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white/80 backdrop-blur-md p-5 rounded-3xl border border-gray-100 shadow-sm">
           <div>
             <div className="flex items-center gap-1.5 text-green-600 font-bold text-[11px] uppercase tracking-wider mb-0.5">
               <Sparkles size={13} /> Crypto Gateway
@@ -73,13 +73,13 @@ export const CreateQrForm = () => {
             <h1 className="text-xl md:text-2xl font-extrabold text-gray-900 tracking-tight">QR Payment Creator</h1>
             <p className="text-xs text-gray-400 mt-0.5">Generate crypto payment QRs instantly.</p>
           </div>
-          <div className="bg-green-50 text-green-700 px-3.5 py-1.5 rounded-xl font-bold text-xs border border-green-100 flex items-center gap-1.5 shadow-2xs">
+          <div className="bg-green-50 text-green-700 px-3.5 py-1.5 rounded-xl font-bold text-xs border border-green-100 flex items-center gap-1.5 shadow-sm">
             <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
             Online
           </div>
         </div>
 
-        {/* ১. উপরে: ফর্ম এবং ঠিক তার নিচে QR কোড প্রিভিউ সেকশন */}
+        {/* ফর্ম এবং QR কোড প্রিভিউ সেকশন */}
         <div className="bg-white p-6 md:p-8 rounded-3xl shadow-sm border border-gray-100/80 space-y-6">
           
           {/* ফর্ম অংশ */}
@@ -112,7 +112,7 @@ export const CreateQrForm = () => {
                       key={amt} 
                       type="button"
                       onClick={() => setAmount(amt)} 
-                      className="px-3.5 py-1.5 border border-gray-200 rounded-xl hover:border-green-500 hover:bg-green-50/50 hover:text-green-600 transition-all font-semibold text-xs bg-gray-50/50 cursor-pointer text-gray-700 shadow-2xs"
+                      className="px-3.5 py-1.5 border border-gray-200 rounded-xl hover:border-green-500 hover:bg-green-50/50 hover:text-green-600 transition-all font-semibold text-xs bg-gray-50/50 cursor-pointer text-gray-700 shadow-sm"
                     >
                       ${amt}
                     </button>
@@ -131,12 +131,19 @@ export const CreateQrForm = () => {
             </form>
           </div>
 
-          {/* QR প্রিভিউ সেকশন */}
+          {/* SVG QR প্রিভিউ সেকশন */}
           <div className="flex flex-col items-center justify-center bg-gray-50/60 p-5 rounded-2xl border border-dashed border-gray-200">
             {generatedLink ? (
               <div className="w-full flex flex-col items-center animate-in fade-in zoom-in duration-200 max-w-sm">
-                <div className="p-3 bg-white rounded-2xl shadow-sm border border-gray-100">
-                  <QRCodeSVG value={generatedLink} size={160} />
+                <div className="p-4 bg-white rounded-2xl shadow-sm border border-gray-100">
+                  <QRCodeSVG 
+                    value={generatedLink} 
+                    size={180} 
+                    bgColor={"#ffffff"}
+                    fgColor={"#000000"}
+                    level={"H"}
+                    includeMargin={true}
+                  />
                 </div>
                 <p className="mt-2.5 text-[11px] text-gray-400 font-mono truncate max-w-[240px] text-center">{generatedLink}</p>
                 <a 
@@ -150,7 +157,7 @@ export const CreateQrForm = () => {
               </div>
             ) : (
               <div className="text-center py-5 text-gray-400">
-                <div className="w-12 h-12 bg-white rounded-xl shadow-xs border border-gray-100 flex items-center justify-center mx-auto mb-2 text-gray-300">
+                <div className="w-12 h-12 bg-white rounded-xl shadow-sm border border-gray-100 flex items-center justify-center mx-auto mb-2 text-gray-300">
                   <QrCode size={24} />
                 </div>
                 <p className="font-bold text-xs text-gray-600">No QR Generated</p>
@@ -161,7 +168,7 @@ export const CreateQrForm = () => {
 
         </div>
 
-        {/* ২. নিচে: জেনারেট হওয়া লিংকগুলোর লিস্ট (হিস্ট্রি সেকশন) */}
+        {/* পেমেন্ট হিস্ট্রি সেকশন */}
         <div className="bg-white p-6 md:p-8 rounded-3xl shadow-sm border border-gray-100">
           <div className="flex justify-between items-center mb-5">
             <div>
@@ -182,7 +189,7 @@ export const CreateQrForm = () => {
                 return (
                   <div 
                     key={item.id || item._id || index} 
-                    className="p-3.5 rounded-2xl border border-gray-100 hover:border-green-200 hover:shadow-xs transition-all bg-gray-50/40 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 group"
+                    className="p-3.5 rounded-2xl border border-gray-100 hover:border-green-200 hover:shadow-sm transition-all bg-gray-50/40 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 group"
                   >
                     <div className="space-y-0.5">
                       <div className="flex items-center gap-2">
@@ -211,7 +218,7 @@ export const CreateQrForm = () => {
                         href={linkUrl} 
                         target="_blank" 
                         rel="noopener noreferrer"
-                        className="w-full sm:w-auto px-3.5 py-1.5 bg-white border border-gray-200 group-hover:border-green-500 group-hover:text-green-600 text-gray-700 rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
+                        className="w-full sm:w-auto px-3.5 py-1.5 bg-white border border-gray-200 group-hover:border-green-500 group-hover:text-green-600 text-gray-700 rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
                       >
                         Open <ExternalLink size={12} />
                       </a>

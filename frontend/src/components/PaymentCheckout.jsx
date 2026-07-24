@@ -1,82 +1,159 @@
 import React, { useState, useEffect } from 'react';
-import { useParams } from 'react-router-dom';
 import axios from 'axios';
+import { useParams, useLocation } from 'react-router-dom';
 
-export const PaymentCheckout = () => {
-  const { linkId } = useParams(); // URL থেকে লিংক আইডি (যেমন: ayub) নেওয়া হলো
-  const [linkData, setLinkData] = useState(null);
-  const [qrCodeImage, setQrCodeImage] = useState("");
-  const [loading, setLoading] = useState(false);
+const PaymentCheckout = () => {
+  const { linkId, invoiceId } = useParams();
+  const location = useLocation();
+  
+  const passedData = location.state?.paymentData || null;
+  const initialAmount = location.state?.selectedAmount || '10.00';
+
+  const [amount, setAmount] = useState(initialAmount);
+  const [loading, setLoading] = useState(!passedData);
+  const [paymentData, setPaymentData] = useState(passedData);
+  const [error, setError] = useState('');
+  const [paymentStatus, setPaymentStatus] = useState('pending');
 
   useEffect(() => {
-    // ব্যাকএন্ড থেকে এই লিংকের ডাটা (লোগো, অ্যামাউন্ট ইত্যাদি) ফেচ করা
-    axios.get(`http://localhost:5000/api/payment-links/${linkId}`)
-      .then(res => setLinkData(res.data))
-      .catch(err => console.error("Link data not found", err));
-  }, [linkId]);
+    if (!passedData) {
+      const generateInvoiceDirectly = async () => {
+        setLoading(true);
+        try {
+          const response = await axios.post('http://localhost:5000/api/generate-gateway-qr', {
+            linkId: linkId,
+            amount: amount,
+            buyerEmail: 'customer@example.com',
+            userEmail: 'admin@mamun.com'
+          });
+          if (response.data.success) {
+            setPaymentData(response.data);
+          } else {
+            setError("Failed to load QR code.");
+          }
+        } catch (err) {
+          console.error("Error:", err);
+          setError("Failed to connect with payment gateway.");
+        } finally {
+          setLoading(false);
+        }
+      };
 
-  // Pay বাটনে ক্লিক করলে পেমেন্ট গেটওয়ে থেকে ডাইনামিক QR কোড আনার ফাংশন
-  const handlePayClick = async () => {
-    setLoading(true);
-    try {
-      // পেমেন্ট গেটওয়ের API কল (যেখানে অ্যামাউন্ট বা লিংক আইডি পাঠানো হবে)
-      const response = await axios.post('http://localhost:5000/api/generate-gateway-qr', {
-        linkId: linkId,
-        amount: linkData?.amount || 10
-      });
+      generateInvoiceDirectly();
+    }
+  }, [linkId, passedData, amount]);
 
-      // পেমেন্ট গেটওয়ে থেকে আসা QR কোডের ইমেজ বা লিংক সেট করা
-      setQrCodeImage(response.data.qrCodeUrl); 
-    } catch (error) {
-      console.error("Error generating gateway QR:", error);
-      alert("Failed to generate payment QR from gateway!");
-    } finally {
-      setLoading(false);
+  useEffect(() => {
+    let interval;
+    if (invoiceId && paymentStatus === 'pending') {
+      interval = setInterval(async () => {
+        try {
+          const res = await axios.get(`http://localhost:5000/i/${invoiceId}/status`);
+          if (res.data.status === 'completed' || res.data.status === 'Paid') {
+            setPaymentStatus('completed');
+            clearInterval(interval);
+          }
+        } catch (err) {
+          // Silent catch
+        }
+      }, 5000);
+    }
+    return () => clearInterval(interval);
+  }, [invoiceId, paymentStatus]);
+
+  const handleCashAppRedirect = () => {
+    const lightningInvoice = paymentData?.bolt11 || paymentData?.lightningInvoice || paymentData?.paymentRequest;
+
+    if (lightningInvoice && typeof lightningInvoice === 'string' && lightningInvoice.startsWith('lnbc')) {
+      const cashAppUrl = `https://cash.app/launch/lightning/${lightningInvoice}`;
+      window.location.href = cashAppUrl;
+    } else {
+      alert("Lightning invoice (bolt11) is not ready yet!");
     }
   };
 
-  if (!linkData) {
-    return <div className="p-8 text-center text-gray-500">Loading Payment Page...</div>;
-  }
-
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-      <div className="bg-white p-8 rounded-3xl shadow-xl max-w-md w-full text-center space-y-6 border border-gray-100">
-        
-        {/* ড্যাশবোর্ডে যে লোগো সিলেক্ট করা হয়েছিল, ঠিক সেটি এখানে শো করবে */}
-        <div className="flex justify-center">
-          {linkData.image ? (
-            <img src={linkData.image} alt="Selected Logo" className="w-20 h-20 rounded-full object-cover border-4 border-green-50 shadow-md" />
-          ) : (
-            <div className="w-20 h-20 rounded-full bg-green-500 text-white flex items-center justify-center font-bold text-xl">Pay</div>
-          )}
-        </div>
-
-        <div>
-          <h2 className="text-xl font-bold text-gray-800">Checkout: {linkData.name}</h2>
-          <p className="text-sm text-gray-400 mt-1">Amount to Pay: <span className="font-bold text-green-600">${linkData.amount || "10.00"}</span></p>
-        </div>
-
-        {/* যদি পেমেন্ট গেটওয়ে থেকে QR কোড চলে আসে, তবে সেটি দেখাবে। না হলে Pay বাটন দেখাবে */}
-        {!qrCodeImage ? (
-          <button 
-            onClick={handlePayClick}
-            disabled={loading}
-            className="w-full bg-green-500 text-white py-4 rounded-2xl font-bold hover:bg-green-600 transition shadow-lg shadow-green-100 disabled:bg-gray-300"
-          >
-            {loading ? "Generating QR..." : "Pay Now"}
-          </button>
-        ) : (
-          <div className="space-y-4 animate-fadeIn">
-            <div className="p-4 bg-gray-50 border border-gray-200 rounded-2xl flex flex-col items-center">
-              <p className="text-xs font-bold text-gray-500 mb-2">Scan QR code to complete payment</p>
-              <img src={qrCodeImage} alt="Gateway QR Code" className="w-48 h-48 object-contain border p-2 bg-white rounded-xl shadow-sm" />
-            </div>
-            <p className="text-xs text-green-600 font-medium">Waiting for payment confirmation...</p>
+    <div className="bg-[#f9f9f9] flex flex-col h-dvh overflow-hidden font-sans">
+      <header className="sticky top-0 z-50 flex items-center justify-between border-b border-neutral-100 bg-white px-4 py-3">
+        <div className="flex items-center gap-2">
+          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[#00D54B] text-lg font-black text-white shadow-sm">
+            S
           </div>
-        )}
+        </div>
+        <div className="flex items-center gap-2 bg-[#00D54B]/10 text-[#00D54B] px-3 py-1.5 rounded-full text-xs font-bold border border-[#00D54B]/20">
+          <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+            <path clipRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" fillRule="evenodd"></path>
+          </svg>
+          Secure
+        </div>
+      </header>
 
-      </div>
+      <main className="flex-1 bg-[#f5f5f5] flex justify-center pt-10 overflow-auto">
+        <div className="w-full max-w-[560px] px-5 pb-10">
+          {paymentStatus === 'completed' ? (
+            <div className="bg-white rounded-[22px] p-8 text-center space-y-4 shadow-sm border border-gray-200">
+              <div className="w-16 h-16 bg-emerald-100 text-[#00D54B] rounded-full flex items-center justify-center mx-auto text-3xl font-bold">
+                ✓
+              </div>
+              <h2 className="text-2xl font-black text-gray-900">Payment Successful!</h2>
+              <p className="text-gray-500 text-sm">Your payment was completed successfully.</p>
+            </div>
+          ) : (
+            <>
+              <div className="bg-white rounded-[22px] border border-gray-200 shadow-sm w-full max-w-[480px] mx-auto overflow-hidden">
+                <div className="pt-10 pb-2 text-center">
+                  <p className="text-[18px] text-gray-400 font-medium">Scan or tap to pay</p>
+                  <h2 className="text-[64px] leading-none font-black text-[#0f172a] mt-2">${amount}</h2>
+                </div>
+
+                <div className="relative px-5">
+                  <div className="relative rounded-xl overflow-hidden">
+                    {loading ? (
+                      <div className="aspect-square flex items-center justify-center">
+                        <div className="h-10 w-10 border-4 border-[#00D54B] border-t-transparent rounded-full animate-spin" />
+                      </div>
+                    ) : paymentData?.qrCodeUrl ? (
+                      <img src={paymentData.qrCodeUrl} alt="QR" className="w-full aspect-square object-contain" />
+                    ) : (
+                      <div className="aspect-square flex items-center justify-center text-red-500 font-bold">
+                        QR unavailable
+                      </div>
+                    )}
+
+                    {!loading && paymentData?.qrCodeUrl && (
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <div className="bg-[#00D54B] w-28 h-28 rounded-[28px] shadow-xl border-[8px] border-white flex items-center justify-center">
+                          <span className="text-white text-7xl font-black leading-none">$</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="py-5 text-center">
+                  <p className="text-[24px] font-bold text-gray-900">Waiting for payment.</p>
+                </div>
+              </div>
+
+              <button
+                onClick={handleCashAppRedirect}
+                disabled={loading || !paymentData}
+                className="mt-6 w-full h-[68px] rounded-[20px] bg-[#00D54B] text-white font-bold text-[30px] flex items-center justify-center gap-5 shadow-lg hover:bg-[#00c64a] transition cursor-pointer disabled:bg-gray-300"
+              >
+                <div className="bg-black rounded-lg p-2">
+                  <span className="text-white text-xl font-black">$</span>
+                </div>
+                <span className="text-[22px] font-bold">Pay now</span>
+                <span className="bg-white/20 px-3 py-1 rounded-md text-[12px] uppercase font-bold">Recommended</span>
+              </button>
+            </>
+          )}
+
+          {error && <p className="text-red-500 text-xs text-center font-bold mt-4">{error}</p>}
+        </div>
+      </main>
     </div>
   );
 };
+
+export default PaymentCheckout;

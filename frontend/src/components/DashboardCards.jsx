@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { CreateQrForm } from './CreateQrForm';
-import { Copy, QrCode, BarChart2, Plus, Wallet, Users, Coins, Receipt, TrendingUp, PiggyBank, ArrowDownToLine, Eye, Link as LinkIcon } from "lucide-react";
+import { Copy, Wallet, Users, Coins, Receipt, TrendingUp, PiggyBank, ArrowDownToLine, Link as LinkIcon } from "lucide-react";
 
 import imgGreen from '../asset/cashapp_green.png';
 import imgLight from '../asset/cashapp_light.png';
@@ -11,8 +11,6 @@ export const DashboardCards = () => {
   const [selectedTheme, setSelectedTheme] = useState('light');
   const [amount, setAmount] = useState("10");
   const [selectedImage, setSelectedImage] = useState(imgLight); 
-  
-  // ইউজার যে নাম টাইপ করবে (যেমন: ayub) তার জন্য স্টেট
   const [linkIdInput, setLinkIdInput] = useState("");
 
   const [stats, setStats] = useState({
@@ -58,7 +56,6 @@ export const DashboardCards = () => {
       return alert("Please enter a name for the link ID!");
     }
 
-    // লোকালহোস্ট ডোমেইনের শেষে ইউজারের দেওয়া নাম যুক্ত করা (যেমন: http://localhost:5173/ayub)
     const finalUrl = `http://localhost:5173/${linkIdInput.trim()}`;
 
     const newLinkData = {
@@ -66,34 +63,19 @@ export const DashboardCards = () => {
       url: finalUrl,
       theme: selectedTheme,
       amount: amount,
-      image: selectedImage, 
+      image: selectedImage, // আপনার সিলেক্ট করা imgLight বা imgGreen এখানে সেভ হবে
       createdAt: new Date()
     };
 
     try {
       const response = await axios.post('http://localhost:5000/api/create-payment-link', newLinkData);
       setPaymentLinks([...paymentLinks, response.data]);
-      setLinkIdInput(""); // ইনপুট বক্স খালি করা
+      setLinkIdInput(""); 
       alert("Payment Link Created Successfully!");
     } catch (error) {
       console.error("Error creating link:", error);
       alert("Failed to save payment link");
     }
-  };
-
-  const updateLinkTheme = async (id, newTheme) => {
-    try {
-      await axios.put(`http://localhost:5000/api/update-theme/${id}`, { theme: newTheme });
-      setPaymentLinks(paymentLinks.map(link => (link._id === id ? { ...link, theme: newTheme } : link)));
-      alert("Template Saved Successfully!");
-    } catch (error) {
-      console.error("Error updating theme:", error);
-    }
-  };
-
-  const handlePreview = (url, theme) => {
-    const previewUrl = `${url}?theme=${theme}`;
-    window.open(previewUrl, '_blank');
   };
 
   return (
@@ -117,16 +99,12 @@ export const DashboardCards = () => {
         <div className="space-y-6">
           <div className="flex justify-between items-center">
             <h2 className="text-xl font-semibold">Payment Link</h2>
-            <select className="border rounded-xl px-3 py-2 text-sm bg-white outline-none shadow-sm">
-              <option>http://localhost:5173</option>
-            </select>
           </div>
 
-          {/* ছোট এবং সুন্দর পেমেন্ট লিংক কার্ড লিস্ট */}
+          {/* পেমেন্ট লিংক কার্ড লিস্ট */}
           {paymentLinks.map((item) => (
             <div key={item._id} className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex items-center justify-between gap-4">
               <div className="flex items-center gap-3 overflow-hidden">
-                {/* সিলেক্ট করা লোগো (imgLight বা imgGreen) */}
                 <img 
                   src={item.image || imgLight} 
                   alt="Logo" 
@@ -140,7 +118,6 @@ export const DashboardCards = () => {
                 </div>
               </div>
 
-              {/* কপি বাটন */}
               <button 
                 onClick={() => { navigator.clipboard.writeText(item.url); alert("Link Copied!"); }} 
                 className="p-2.5 bg-green-50 hover:bg-green-100 text-green-600 rounded-xl transition flex-shrink-0"
@@ -151,7 +128,7 @@ export const DashboardCards = () => {
             </div>
           ))}
 
-          {/* নতুন লিঙ্ক তৈরির ফর্ম (যেখানে নাম টাইপ করলে ডোমেইনের শেষে যুক্ত হবে) */}
+          {/* নতুন লিঙ্ক তৈরির ফর্ম */}
           <div className="bg-white p-8 rounded-3xl border border-gray-100 shadow-lg shadow-gray-100/50 space-y-5">
             <div>
               <label className="block text-xs font-bold text-gray-800 uppercase tracking-wider mb-2">Link ID (text)</label>
@@ -165,7 +142,7 @@ export const DashboardCards = () => {
               <p className="text-[11px] text-gray-400 mt-1.5">This will be your unique payment URL (e.g. http://localhost:5173/ayub).</p>
             </div>
 
-            {/* লোগো সিলেকশন */}
+            {/* লোগো সিলেকশন (এখানে দুটি PNG সিলেক্ট করা যাবে) */}
             <div>
               <label className="block text-xs font-bold text-gray-800 uppercase tracking-wider mb-2">Select Logo</label>
               <div className="flex gap-4">

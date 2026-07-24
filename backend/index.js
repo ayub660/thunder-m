@@ -102,124 +102,154 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
-app.get('/api/payment-links/:linkId', async (req, res) => {
-  try {
-    const { linkId } = req.params;
-    const link = await paymentLinksCollection.findOne({ name: linkId });
-    if (!link) {
-      return res.status(404).json({ error: "Payment link not found" });
-    }
-    res.json(link);
-  } catch (error) {
-    res.status(500).json({ error: "Server error" });
-  }
-});
-
-app.post('/api/create-payment-link', async (req, res) => {
-  try {
-    const { name, url, theme, amount, image, createdAt } = req.body;
-    const newLink = {
-      name,
-      url,
-      theme,
-      amount,
-      image,
-      createdAt: createdAt ? new Date(createdAt) : new Date()
-    };
-    const result = await paymentLinksCollection.insertOne(newLink);
-    const savedLink = { _id: result.insertedId, ...newLink };
-    res.status(201).json(savedLink);
-  } catch (error) {
-    res.status(500).json({ error: "Failed to save payment link" });
-  }
-});
-
-app.put('/api/update-theme/:id', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { theme } = req.body;
-    const result = await paymentLinksCollection.updateOne(
-      { _id: new ObjectId(id) },
-      { $set: { theme } }
-    );
-    if (result.matchedCount === 0) {
-      return res.status(404).json({ error: "Link not found" });
-    }
-    const updatedLink = await paymentLinksCollection.findOne({ _id: new ObjectId(id) });
-    res.json({ success: true, updatedLink });
-  } catch (error) {
-    res.status(500).json({ error: "Failed to update theme" });
-  }
-});
-
-// --- BTCPAY GATEWAY QR & INVOICE API ---
+// --- BTCPAY GATEWAY QR & INVOICE API (CashApp Style Dynamic Generation) ---
 app.post('/api/generate-gateway-qr', async (req, res) => {
     try {
-        const { linkId, amount, buyerEmail, userEmail } = req.body;
+        const { linkId, amount, buyerEmail, userEmail, currency, orderId } = req.body;
 
         const btcpayUrl = process.env.BTCPAY_URL;
         const storeId = process.env.BTCPAY_STORE_ID;
         const apiKey = process.env.BTCPAY_API_KEY;
 
+        // যদি BTCPay কনফিগার করা না থাকে, তবে ফলব্যাক QR তৈরি করবে
         if (!btcpayUrl || !storeId || !apiKey) {
-            return res.status(500).json({ success: false, error: "BTCPay environment variables are missing!" });
-        }
-
-        const endpoint = `${btcpayUrl}api/v1/stores/${storeId}/invoices`;
-
-        const invoiceData = {
-            amount: (amount || "10").toString(),
-            currency: 'USD',
-            paymentMethods: ["BTC_Lightning"], 
-            metadata: {
-                linkId: linkId || 'LightningPayment',
-                orderId: 'ORDER-' + Date.now(),
-            },
-            checkout: {
-                speedPolicy: "HighSpeed",
-                buyerEmail: buyerEmail || "customer@example.com"
-            }
-        };
-
-        const btcpayResponse = await axios.post(endpoint, invoiceData, {
-            headers: {
-                'Authorization': `Bearer ${apiKey}`,
-                'Content-Type': 'application/json'
-            }
-        });
-
-        const checkoutLink = btcpayResponse.data.checkoutLink;
-        const invoiceId = btcpayResponse.data.id;
-
-        const qrCodeImageBase64 = await QRCode.toDataURL(checkoutLink);
-
-        if (transactionsCollection) {
-            await transactionsCollection.insertOne({
-                invoiceId: invoiceId,
-                name: `Payment for ${linkId || 'Gateway'}`,
-                amount: Number(amount || 10),
-                currency: 'USD',
-                status: "Pending",
-                checkoutLink: checkoutLink,
-                userEmail: userEmail || "admin@mamun.com",
-                createdAt: new Date()
+            const fallbackLink = `https://pay.example.com/checkout?amount=${amount || '10.00'}&order=${orderId || 'ORDER-' + Date.now()}`;
+            const qrCodeImageBase64 = await QRCode.toDataURL(fallbackLink);
+            
+            return res.status(200).json({
+                success: true,
+                invoiceId: 'FALLBACK-' + Date.now(),
+                checkoutLink: fallbackLink,
+                amount: amount || "10.00",
+                qrCodeUrl: qrCodeImageBase64,
+                bolt11: fallbackLink,
+                lightningInvoice: fallbackLink,
+                note: "Running on simulated mode because BTCPay env variables are missing."
             });
         }
 
-        res.status(200).json({
+        const normalizedBtcpayUrl = btcpayUrl.endsWith('/') ? btcpayUrl : `${btcpayUrl}/`;
+        const endpoint = `${normalizedBtcpayUrl}api/v1/stores/${storeId}/invoices`;
+
+        const invoiceData = {
+            amount: (amount || "10.00").toString(),
+            currency: currency || 'USD',
+            paymentMethods: ["BTC-LightningNetwork", "BTC"], 
+            metadata: {
+                linkId: linkId || 'CashAppStylePayment',
+                orderId: orderId || 'ORDER-' + Date.now(),
+            },
+            checkout: {
+                speedPolicy: "HighSpeed",
+                buyerEmail: buyerEmail || "customer@example.com",
+                redirectAutomatically: false 
+            }
+        };
+
+        let btcpayResponse;
+        try {
+            btcpayResponse = await axios.post(endpoint, invoiceData, {
+                headers: {
+                    'Authorization': `token ${apiKey}`, 
+                    'Content-Type': 'application/json'
+                }
+            });
+        } catch (btcpayErr) {
+            console.error("BTCPay API Rejection Error:", btcpayErr.response?.data || btcpayErr.message);
+            return res.status(500).json({
+                success: false,
+                error: btcpayErr.response?.data?.message || `BTCPay Error: ${btcpayErr.message}`
+            });
+        }
+
+        const invoice = btcpayResponse.data;
+        const invoiceId = invoice.id;
+        let checkoutLink = invoice.checkoutLink || `${normalizedBtcpayUrl}i/${invoiceId}`;
+
+        // --- সঠিকভাবে Lightning Invoice (bolt11) বের করা ---
+        let bolt11Invoice = "";
+        try {
+            const paymentMethodsRes = await axios.get(`${normalizedBtcpayUrl}api/v1/stores/${storeId}/invoices/${invoiceId}/payment-methods`, {
+                headers: { 'Authorization': `token ${apiKey}` }
+            });
+            
+            if (paymentMethodsRes && paymentMethodsRes.data) {
+                const methods = Array.isArray(paymentMethodsRes.data) ? paymentMethodsRes.data : [paymentMethodsRes.data];
+                
+                const lightningMethod = methods.find(m => 
+                    m.paymentMethod === "BTC-LightningNetwork" || 
+                    m.paymentMethodId === "BTC-LightningNetwork" ||
+                    (m.destination && m.destination.startsWith('lnbc')) ||
+                    (m.bolt11 && m.bolt11.startsWith('lnbc'))
+                );
+
+                if (lightningMethod) {
+                    bolt11Invoice = lightningMethod.destination || lightningMethod.bolt11 || lightningMethod.paymentLink || "";
+                }
+            }
+        } catch (pmErr) {
+            console.error("Could not fetch payment methods for bolt11:", pmErr.message);
+        }
+
+        // যদি পেমেন্ট মেথড এন্ডপয়েন্ট থেকে না পাওয়া যায়, তবে মূল ইনভয়েস অবজেক্টের ভেতর থেকে খোঁজা
+        if (!bolt11Invoice && invoice.paymentMethods) {
+            const lnMethod = invoice.paymentMethods.find(m => m.paymentMethod === "BTC-LightningNetwork");
+            if (lnMethod) {
+                bolt11Invoice = lnMethod.destination || lnMethod.bolt11 || "";
+            }
+        }
+
+        console.log("Resolved Lightning Invoice (bolt11):", bolt11Invoice);
+
+        // ক্যাশঅ্যাপ স্টাইলের হাই রেজুলেশন QR কোড জেনারেট করা (QR-এ checkoutLink ব্যবহার করা হয়েছে যেন বড় lnbc স্ট্রিংয়ের কারণে এরর না মারTransactions মারে)
+        let qrCodeImageBase64 = "";
+        try {
+            qrCodeImageBase64 = await QRCode.toDataURL(checkoutLink, {
+                errorCorrectionLevel: 'M',
+                margin: 2,
+                color: {
+                    dark: '#000000',
+                    light: '#ffffff'
+                }
+            });
+        } catch (qrErr) {
+            console.error("QR Code Generation Error:", qrErr.message);
+            return res.status(500).json({ success: false, error: "Failed to generate QR Code image" });
+        }
+
+        if (typeof transactionsCollection !== 'undefined' && transactionsCollection) {
+            try {
+                await transactionsCollection.insertOne({
+                    invoiceId: invoiceId,
+                    name: `Payment for ${linkId || 'Quick Invoice'}`,
+                    amount: Number(amount || 10),
+                    currency: currency || 'USD',
+                    status: "Pending",
+                    checkoutLink: checkoutLink,
+                    bolt11: bolt11Invoice,
+                    userEmail: userEmail || "admin@mamun.com",
+                    createdAt: new Date()
+                });
+            } catch (dbErr) {
+                console.error("Database Insert Error:", dbErr.message);
+            }
+        }
+
+        return res.status(200).json({
             success: true,
             invoiceId: invoiceId,
             checkoutLink: checkoutLink,
-            amount: amount || "10",
-            qrCodeUrl: qrCodeImageBase64
+            amount: amount || "10.00",
+            qrCodeUrl: qrCodeImageBase64,
+            bolt11: bolt11Invoice,         
+            lightningInvoice: bolt11Invoice
         });
 
     } catch (error) {
-        console.error("BTCPay Gateway QR Error:", error.response?.data || error.message);
-        res.status(500).json({ 
+        console.error("Unexpected Server Crash in /api/generate-gateway-qr:", error.message);
+        return res.status(500).json({ 
             success: false, 
-            error: "Failed to generate BTCPay gateway QR",
-            details: error.response?.data || error.message 
+            error: error.message || "Internal Server Error occurred while generating gateway QR" 
         });
     }
 });
@@ -239,7 +269,7 @@ app.get('/api/balance', async (req, res) => {
 
     let totalEarnings = 0;
     transactions.forEach(t => {
-      if (t.status === "Paid" || t.status === "Success") {
+      if (t.status === "Paid" || t.status === "Success" || t.status === "Settled") {
         totalEarnings += Number(t.amount || 0);
       }
     });
@@ -284,8 +314,7 @@ app.get('/api/transactions', async (req, res) => {
 });
 
 app.post("/api/btcpay/webhook", (req, res) => {
-    console.log("BTCPay webhook received");
-    console.log(req.body);
+    console.log("BTCPay webhook received:", req.body);
     res.sendStatus(200);
 });
 
@@ -331,7 +360,6 @@ app.post('/api/withdraw', async (req, res) => {
   }
 });
 
-// অ্যাডমিনের জন্য সব উইথড্র রিকোয়েস্ট ফেচ করার রাউট
 app.get('/api/admin/withdrawals', async (req, res) => {
   try {
     const withdrawals = await withdrawalsCollection.find({}).sort({ createdAt: -1 }).toArray();
@@ -342,11 +370,10 @@ app.get('/api/admin/withdrawals', async (req, res) => {
   }
 });
 
-// অ্যাডমিনের জন্য উইথড্র স্ট্যাটাস আপডেট (Pending থেকে Paid বা Approved করা) রাউট
 app.put('/api/admin/withdrawals/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { status } = req.body; // 'Paid' বা 'Approved'
+    const { status } = req.body;
 
     if (!ObjectId.isValid(id)) {
       return res.status(400).json({ success: false, message: 'Invalid ID' });
@@ -384,7 +411,6 @@ app.get('/api/me', async (req, res) => {
 app.get('/api/admin/users', async (req, res) => {
   try {
     const { role, userId } = req.query;
-
     let query = {};
 
     if (role === 'master_admin') {
@@ -521,81 +547,66 @@ app.delete('/api/admin/users/:id', async (req, res) => {
   }
 });
 
-app.post('/api/create-invoice', async (req, res) => {
-    try {
-        const { amount, currency, orderId, buyerEmail } = req.body;
-
-        const btcpayUrl = process.env.BTCPAY_URL;
-        const storeId = process.env.BTCPAY_STORE_ID;
-        const apiKey = process.env.BTCPAY_API_KEY;
-
-        if (!btcpayUrl || !storeId || !apiKey) {
-            return res.status(500).json({ success: false, message: "BTCPay environment variables are missing!" });
-        }
-
-        const endpoint = `${btcpayUrl}api/v1/stores/${storeId}/invoices`;
-
-        const invoiceData = {
-            amount: amount ? amount.toString() : "10",
-            currency: currency || 'USD',
-            metadata: {
-                orderId: orderId || 'ORDER-' + Date.now(),
-            },
-            checkout: {
-                speedPolicy: "MediumSpeed",
-                buyerEmail: buyerEmail || "customer@example.com"
-            }
-        };
-
-        const response = await axios.post(endpoint, invoiceData, {
-            headers: {
-                'Authorization': `Bearer ${apiKey}`,
-                'Content-Type': 'application/json'
-            }
-        });
-
-        res.status(201).json({
-            success: true,
-            invoiceId: response.data.id,
-            checkoutLink: response.data.checkoutLink
-        });
-
-    } catch (error) {
-        console.error('BTCPay Invoice Error:', error.response?.data || error.message);
-        res.status(500).json({
-            success: false,
-            message: 'Failed to create invoice',
-            error: error.response?.data || error.message
-        });
-    }
-});
-
-app.put('/api/admin/update-password', async (req, res) => {
+// --- PAYMENT STATUS CHECK API ---
+app.get('/i/:linkId/status', async (req, res) => {
   try {
-    const { email, oldPassword, newPassword } = req.body;
+    const { linkId } = req.params;
+    
+    const transaction = await transactionsCollection.findOne({ invoiceId: linkId });
+    const btcpayUrl = process.env.BTCPAY_URL;
+    const storeId = process.env.BTCPAY_STORE_ID;
+    const apiKey = process.env.BTCPAY_API_KEY;
+    const normalizedBtcpayUrl = btcpayUrl ? (btcpayUrl.endsWith('/') ? btcpayUrl : `${btcpayUrl}/`) : '';
 
-    if (!email || !oldPassword || !newPassword) {
-      return res.status(400).json({ success: false, message: "All fields are required!" });
+    if (!transaction) {
+      try {
+        const objectIdLink = new ObjectId(linkId);
+        const txById = await transactionsCollection.findOne({ _id: objectIdLink });
+        if (txById && txById.invoiceId && normalizedBtcpayUrl) {
+            const response = await axios.get(`${normalizedBtcpayUrl}api/v1/stores/${storeId}/invoices/${txById.invoiceId}`, {
+               headers: { 'Authorization': `token ${apiKey}` }
+            });
+
+            return res.status(200).json({
+               status: response.data.status 
+            });
+        }
+      } catch (e) {
+        // Not a valid ObjectId
+      }
+      return res.status(404).json({ status: "not_found" });
     }
 
-    const user = await usersCollection.findOne({ email });
-    if (!user) {
-      return res.status(404).json({ success: false, message: "User not found!" });
+    if (normalizedBtcpayUrl && storeId && apiKey && transaction.invoiceId) {
+        try {
+            const btcpayRes = await axios.get(`${normalizedBtcpayUrl}api/v1/stores/${storeId}/invoices/${transaction.invoiceId}`, {
+                headers: { 'Authorization': `token ${apiKey}` }
+            });
+            
+            const currentStatus = btcpayRes.data.status; 
+
+            if (currentStatus === 'Settled' || currentStatus === 'Paid') {
+                await transactionsCollection.updateOne(
+                    { invoiceId: transaction.invoiceId },
+                    { $set: { status: 'Paid' } }
+                );
+                return res.status(200).json({ status: 'completed' });
+            }
+
+            return res.status(200).json({ status: 'pending' });
+        } catch (btcErr) {
+            console.error("Error fetching status from BTCPay:", btcErr.message);
+        }
     }
 
-    if (user.password !== oldPassword) {
-      return res.status(400).json({ success: false, message: "Incorrect old password!" });
-    }
+    const isPaid = transaction.status === "Paid" || transaction.status === "Success" || transaction.status === "Settled";
+    return res.status(200).json({
+      status: isPaid ? "completed" : "pending"
+    });
 
-    await usersCollection.updateOne(
-      { email },
-      { $set: { password: newPassword } }
-    );
-
-    res.status(200).json({ success: true, message: "Password updated successfully!" });
   } catch (error) {
-    console.error("Error updating password:", error);
-    res.status(500).json({ success: false, message: "Server error while updating password" });
+    console.error("Status Check Error:", error);
+    return res.status(500).json({ status: "error", message: error.message });
   }
 });
 
