@@ -12,7 +12,8 @@ export const DashboardCards = () => {
   const [linkIdInput, setLinkIdInput] = useState("");
   const [amount, setAmount] = useState("10");
 
-  const [selectedDomain, setSelectedDomain] = useState("http://localhost:5173");
+  // ডাইনামিক্যালি বর্তমান ডোমেইন (लोকালহোস্ট বা ভেরসেল লাইভ লিংক) সেট করা হলো
+  const [selectedDomain, setSelectedDomain] = useState(window.location.origin);
   const [newLinkTheme, setNewLinkTheme] = useState('light');
 
   const [stats, setStats] = useState({
@@ -214,7 +215,7 @@ export const DashboardCards = () => {
               onChange={(e) => setSelectedDomain(e.target.value)}
               className="px-4 py-2 bg-gray-50 border border-green-500 rounded-xl text-sm font-medium text-gray-700 outline-none focus:ring-2 focus:ring-green-100 cursor-pointer shadow-sm"
             >
-              <option value="http://localhost:5173">http://localhost:5173</option>
+              <option value={window.location.origin}>{window.location.origin}</option>
               <option value="https://www.payecash.app">https://www.payecash.app</option>
               <option value="https://www.payin-cash.app">https://www.payin-cash.app</option>
             </select>
