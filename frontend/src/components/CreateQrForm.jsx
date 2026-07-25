@@ -1,14 +1,17 @@
 import React, { useState, useEffect } from 'react';
-import { QrCode, Loader2, ExternalLink, Clock, Sparkles, CheckCircle2, AlertCircle } from "lucide-react";
+import { QrCode, Loader2, ExternalLink, Clock, CheckCircle2, AlertCircle, Zap, DollarSign } from "lucide-react";
 import { QRCodeSVG } from 'qrcode.react';
+import Swal from 'sweetalert2';
 
 export const CreateQrForm = () => {
   const [amount, setAmount] = useState("");
+  const [currentAmount, setCurrentAmount] = useState("8.00");
   const [generatedLink, setGeneratedLink] = useState(null);
+  const [lightningInvoice, setLightningInvoice] = useState(null);
   const [loading, setLoading] = useState(false);
   const [linkList, setLinkList] = useState([]);
 
-  // ব্যাকএন্ড থেকে আগের লিংকগুলোর লিস্ট ফেচ করা
+  // ব্যাকএন্ড থেকে আগের ট্রানজেকশন বা লিংক লিস্ট ফেচ করা (localhost ব্যবহার করে)
   const fetchLinks = () => {
     fetch('http://localhost:5000/api/transactions')
       .then(res => res.json())
@@ -23,9 +26,46 @@ export const CreateQrForm = () => {
     fetchLinks();
   }, []);
 
+  // ক্যাশঅ্যাপ ডিপ লিংক এবং লাইটনিং স্কিম রিডাইরেক্ট হ্যান্ডলার
+  const handleCashAppRedirect = (invoiceStr) => {
+    const targetInvoice = invoiceStr || lightningInvoice;
+    
+    if (targetInvoice && typeof targetInvoice === 'string') {
+      if (targetInvoice.startsWith('lnbc')) {
+        // ক্যাশঅ্যাপ অফিশিয়াল লাইটনিং ডিপ লিংক স্কিম
+        const cashAppUrl = `https://cash.app/launch/lightning/${targetInvoice}`;
+        window.location.href = cashAppUrl;
+      } else if (targetInvoice.includes('cash.app') || targetInvoice.startsWith('http')) {
+        window.location.href = targetInvoice;
+      } else {
+        Swal.fire({
+          icon: 'warning',
+          title: 'Invalid Format',
+          text: 'The invoice format is not recognized for CashApp.',
+          confirmButtonColor: '#00D54B'
+        });
+      }
+    } else {
+      Swal.fire({
+        icon: 'warning',
+        title: 'Not Ready',
+        text: 'Lightning invoice is not ready yet!',
+        confirmButtonColor: '#00D54B'
+      });
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!amount) return alert("Please enter an amount");
+    if (!amount) {
+      Swal.fire({
+        icon: 'warning',
+        title: 'Required',
+        text: 'Please enter an amount',
+        confirmButtonColor: '#00D54B',
+      });
+      return;
+    }
     
     setLoading(true);
     try {
@@ -45,16 +85,39 @@ export const CreateQrForm = () => {
 
       const data = await response.json();
 
-      if (data.success && data.checkoutLink) {
-        setGeneratedLink(data.checkoutLink);
+      if (data.success && (data.lightningInvoice || data.bolt11 || data.checkoutLink)) {
+        const rawInvoice = data.checkoutLink || data.lightningInvoice || data.bolt11 || '';
+        
+        setCurrentAmount(amount);
+        setGeneratedLink(rawInvoice);
+        setLightningInvoice(rawInvoice);
         fetchLinks();
         setAmount("");
+        
+        Swal.fire({
+          icon: 'success',
+          title: 'QR Generated!',
+          text: `Lightning QR generated for $${amount} successfully.`,
+          confirmButtonColor: '#00D54B',
+          timer: 1500,
+          showConfirmButton: false
+        });
       } else {
-        alert(data.error || 'Failed to generate payment QR');
+        Swal.fire({
+          icon: 'error',
+          title: 'Failed',
+          text: data.error || 'Failed to generate payment QR',
+          confirmButtonColor: '#00D54B',
+        });
       }
     } catch (error) {
       console.error('Error:', error);
-      alert('Server error while generating QR');
+      Swal.fire({
+        icon: 'error',
+        title: 'Server Error',
+        text: 'Server error while generating QR',
+        confirmButtonColor: '#00D54B',
+      });
     } finally {
       setLoading(false);
     }
@@ -62,118 +125,132 @@ export const CreateQrForm = () => {
 
   return (
     <div className="p-6 md:p-10 bg-gradient-to-br from-gray-50 via-gray-50/50 to-green-50/20 min-h-screen">
-      <div className="max-w-4xl mx-auto space-y-8">
+      <div className="max-w-2xl mx-auto space-y-8">
         
         {/* পেজ হেডার */}
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white/80 backdrop-blur-md p-5 rounded-3xl border border-gray-100 shadow-sm">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white/85 backdrop-blur-md p-5 rounded-3xl border border-gray-100 shadow-sm">
           <div>
             <div className="flex items-center gap-1.5 text-green-600 font-bold text-[11px] uppercase tracking-wider mb-0.5">
-              <Sparkles size={13} /> Crypto Gateway
+              <Zap size={13} /> CashApp Style Gateway
             </div>
-            <h1 className="text-xl md:text-2xl font-extrabold text-gray-900 tracking-tight">QR Payment Creator</h1>
-            <p className="text-xs text-gray-400 mt-0.5">Generate crypto payment QRs instantly.</p>
+            <h1 className="text-xl md:text-2xl font-extrabold text-gray-900 tracking-tight">Create Lightning QR</h1>
+            <p className="text-xs text-gray-400 mt-0.5">Generate dynamic amount lnbc invoice QRs instantly via localhost.</p>
           </div>
           <div className="bg-green-50 text-green-700 px-3.5 py-1.5 rounded-xl font-bold text-xs border border-green-100 flex items-center gap-1.5 shadow-sm">
             <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
-            Online
+            Online (Localhost)
           </div>
         </div>
 
-        {/* ফর্ম এবং QR কোড প্রিভিউ সেকশন */}
-        <div className="bg-white p-6 md:p-8 rounded-3xl shadow-sm border border-gray-100/80 space-y-6">
+        {/* ফর্ম সেকশন */}
+        <div className="bg-white p-6 md:p-8 rounded-3xl shadow-sm border border-gray-100/80 space-y-5">
+          <div>
+            <h2 className="text-lg font-bold text-gray-900">New Lightning Invoice</h2>
+            <p className="text-xs text-gray-400 mt-0.5">Enter amount to create dynamic payment QR.</p>
+          </div>
           
-          {/* ফর্ম অংশ */}
-          <div className="space-y-5">
+          <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <h2 className="text-lg font-bold text-gray-900">New Invoice</h2>
-              <p className="text-xs text-gray-400 mt-0.5">Enter amount to create checkout link.</p>
+              <label className="block text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-1.5">Amount (USD)</label>
+              <div className="relative">
+                <span className="absolute left-4 top-3.5 text-gray-400 font-bold text-base">$</span>
+                <input 
+                  type="number" 
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                  placeholder="0.00"
+                  className="w-full pl-9 pr-4 py-3 bg-gray-50/80 border border-gray-200 rounded-2xl text-lg font-bold text-gray-800 outline-none focus:border-green-500 focus:bg-white focus:ring-4 focus:ring-green-500/10 transition-all" 
+                />
+              </div>
             </div>
             
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <label className="block text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-1.5">Amount (USD)</label>
-                <div className="relative">
-                  <span className="absolute left-4 top-3.5 text-gray-400 font-bold text-base">$</span>
-                  <input 
-                    type="number" 
-                    value={amount}
-                    onChange={(e) => setAmount(e.target.value)}
-                    placeholder="0.00"
-                    className="w-full pl-9 pr-4 py-3 bg-gray-50/80 border border-gray-200 rounded-2xl text-lg font-bold text-gray-800 outline-none focus:border-green-500 focus:bg-white focus:ring-4 focus:ring-green-500/10 transition-all" 
-                  />
-                </div>
+            <div>
+              <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-2">Quick Amounts</p>
+              <div className="flex gap-2 flex-wrap">
+                {['10', '30', '50', '100', '200', '500', '1000'].map(amt => (
+                  <button 
+                    key={amt} 
+                    type="button"
+                    onClick={() => setAmount(amt)} 
+                    className="px-3.5 py-1.5 border border-gray-200 rounded-xl hover:border-green-500 hover:bg-green-50/50 hover:text-green-600 transition-all font-semibold text-xs bg-gray-50/50 cursor-pointer text-gray-700 shadow-sm"
+                  >
+                    ${amt}
+                  </button>
+                ))}
               </div>
-              
-              <div>
-                <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-2">Quick Amounts</p>
-                <div className="flex gap-2 flex-wrap">
-                  {['10', '30', '50', '100', '200', '500', '1000'].map(amt => (
-                    <button 
-                      key={amt} 
-                      type="button"
-                      onClick={() => setAmount(amt)} 
-                      className="px-3.5 py-1.5 border border-gray-200 rounded-xl hover:border-green-500 hover:bg-green-50/50 hover:text-green-600 transition-all font-semibold text-xs bg-gray-50/50 cursor-pointer text-gray-700 shadow-sm"
-                    >
-                      ${amt}
-                    </button>
-                  ))}
-                </div>
-              </div>
+            </div>
 
-              <button 
-                type="submit" 
-                disabled={loading}
-                className="w-full bg-green-500 text-white py-3.5 rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-green-600 transition-all disabled:opacity-50 cursor-pointer shadow-lg shadow-green-200/50 text-sm"
-              >
-                {loading ? <Loader2 className="animate-spin" size={17} /> : <QrCode size={17} />} 
-                {loading ? 'Generating...' : 'Generate QR Code'}
-              </button>
-            </form>
-          </div>
+            <button 
+              type="submit" 
+              disabled={loading}
+              className="w-full bg-[#00D54B] text-white py-3.5 rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-[#02b841] transition-all disabled:opacity-50 cursor-pointer shadow-lg shadow-green-200/50 text-sm"
+            >
+              {loading ? <Loader2 className="animate-spin" size={17} /> : <QrCode size={17} />} 
+              {loading ? 'Generating...' : 'Generate CashApp Lightning QR'}
+            </button>
+          </form>
+        </div>
 
-          {/* SVG QR প্রিভিউ সেকশন */}
-          <div className="flex flex-col items-center justify-center bg-gray-50/60 p-5 rounded-2xl border border-dashed border-gray-200">
-            {generatedLink ? (
-              <div className="w-full flex flex-col items-center animate-in fade-in zoom-in duration-200 max-w-sm">
-                <div className="p-4 bg-white rounded-2xl shadow-sm border border-gray-100">
+        {/* QR কোড প্রিভিউ সেকশন */}
+        {lightningInvoice && (
+          <div className="flex flex-col items-center justify-center bg-[#00D54B] p-6 md:p-8 rounded-[2.5rem] shadow-xl text-white animate-in fade-in zoom-in duration-200">
+            <div className="w-full flex flex-col items-center max-w-xs">
+              <p className="text-[11px] font-extrabold tracking-widest uppercase opacity-90 mb-1">
+                SCAN OR TAP TO PAY
+              </p>
+              <h2 className="text-3xl font-black mb-4">
+                ${currentAmount}
+              </h2>
+
+              {/* ক্যাশঅ্যাপ স্টাইল কিউআর কার্ড */}
+              <div className="relative bg-white p-4 rounded-3xl shadow-2xl">
+                <div className="relative bg-white rounded-xl overflow-hidden">
                   <QRCodeSVG 
-                    value={generatedLink} 
-                    size={180} 
+                    value={lightningInvoice} 
+                    size={180}
                     bgColor={"#ffffff"}
                     fgColor={"#000000"}
                     level={"H"}
-                    includeMargin={true}
                   />
                 </div>
-                <p className="mt-2.5 text-[11px] text-gray-400 font-mono truncate max-w-[240px] text-center">{generatedLink}</p>
-                <a 
-                  href={generatedLink} 
-                  target="_blank" 
-                  rel="noopener noreferrer"
-                  className="mt-3.5 w-full bg-blue-600 hover:bg-blue-700 text-white py-2.5 px-4 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-md shadow-blue-100 cursor-pointer"
-                >
-                  Open Checkout Page <ExternalLink size={13} />
-                </a>
-              </div>
-            ) : (
-              <div className="text-center py-5 text-gray-400">
-                <div className="w-12 h-12 bg-white rounded-xl shadow-sm border border-gray-100 flex items-center justify-center mx-auto mb-2 text-gray-300">
-                  <QrCode size={24} />
+
+                {/* মাঝখানের ক্যাশঅ্যাপ লোগো বা আইকন */}
+                <div className="absolute inset-0 m-auto w-10 h-10 bg-[#00D54B] rounded-xl flex items-center justify-center shadow-md border-2 border-white">
+                  <DollarSign className="w-5 h-5 text-white stroke-[3]" />
                 </div>
-                <p className="font-bold text-xs text-gray-600">No QR Generated</p>
-                <p className="text-[10px] text-gray-400 mt-0.5">Enter amount & click generate</p>
               </div>
-            )}
+
+              <p className="text-xs font-semibold tracking-wide opacity-95 mt-3 mb-4">
+                Waiting for payment.
+              </p>
+              
+              <div className="flex gap-2 w-full">
+                <button 
+                  onClick={() => {
+                    navigator.clipboard.writeText(generatedLink);
+                    Swal.fire({ icon: 'success', title: 'Copied!', text: 'Invoice copied to clipboard', timer: 1200, showConfirmButton: false, confirmButtonColor: '#00D54B' });
+                  }}
+                  className="flex-1 bg-white/20 hover:bg-white/30 text-white border border-white/30 py-2.5 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer backdrop-blur-sm"
+                >
+                  Copy Link
+                </button>
+                <button 
+                  onClick={() => handleCashAppRedirect(generatedLink)}
+                  className="flex-1 bg-black hover:bg-gray-900 text-white py-2.5 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-md cursor-pointer"
+                >
+                  Pay App <ExternalLink size={12} />
+                </button>
+              </div>
+            </div>
           </div>
+        )}
 
-        </div>
-
-        {/* পেমেন্ট হিস্ট্রি সেকশন */}
+        {/* পেমেন্ট হিস্ট্রি */}
         <div className="bg-white p-6 md:p-8 rounded-3xl shadow-sm border border-gray-100">
           <div className="flex justify-between items-center mb-5">
             <div>
               <h2 className="text-lg font-bold text-gray-900">Payment History</h2>
-              <p className="text-xs text-gray-400 mt-0.5">Previous generated invoices.</p>
+              <p className="text-xs text-gray-400 mt-0.5">Previous generated lightning invoices.</p>
             </div>
             <span className="text-xs font-bold px-3 py-1 bg-gray-100 text-gray-600 rounded-xl">
               Total: {linkList.length}
@@ -183,7 +260,7 @@ export const CreateQrForm = () => {
           <div className="space-y-3 max-h-[500px] overflow-y-auto pr-1">
             {linkList.length > 0 ? (
               linkList.map((item, index) => {
-                const linkUrl = item.checkoutLink || item.payId || item.invoiceId;
+                const itemLink = item.checkoutLink || item.lightningInvoice || item.bolt11 || '';
                 const isPaid = item.status === 'Paid' || item.status === 'Success';
                 
                 return (
@@ -206,22 +283,20 @@ export const CreateQrForm = () => {
                         </span>
                       </div>
                       <p className="text-[11px] text-gray-500 font-mono truncate max-w-xs">
-                        {linkUrl || 'No link'}
+                        {itemLink || 'No link'}
                       </p>
                       <p className="text-[10px] text-gray-400 flex items-center gap-1 font-medium">
                         <Clock size={10} /> {item.createdAt ? new Date(item.createdAt).toLocaleString() : 'Recent'}
                       </p>
                     </div>
 
-                    {linkUrl && (
-                      <a 
-                        href={linkUrl} 
-                        target="_blank" 
-                        rel="noopener noreferrer"
+                    {itemLink && (
+                      <button 
+                        onClick={() => handleCashAppRedirect(itemLink)}
                         className="w-full sm:w-auto px-3.5 py-1.5 bg-white border border-gray-200 group-hover:border-green-500 group-hover:text-green-600 text-gray-700 rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
                       >
-                        Open <ExternalLink size={12} />
-                      </a>
+                        Pay App <ExternalLink size={12} />
+                      </button>
                     )}
                   </div>
                 );
@@ -229,8 +304,8 @@ export const CreateQrForm = () => {
             ) : (
               <div className="text-center py-12 text-gray-400">
                 <QrCode size={36} className="mx-auto mb-2 opacity-20" />
-                <p className="font-bold text-xs text-gray-600">No payment links found.</p>
-                <p className="text-[11px] text-gray-400 mt-0.5">Generated links will show up here.</p>
+                <p className="font-bold text-xs text-gray-600">No invoices found.</p>
+                <p className="text-[11px] text-gray-400 mt-0.5">Generated invoices will show up here.</p>
               </div>
             )}
           </div>

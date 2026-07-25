@@ -73,85 +73,87 @@ const PaymentCheckout = () => {
   };
 
   return (
-    <div className="bg-[#f9f9f9] flex flex-col h-dvh overflow-hidden font-sans">
-      <header className="sticky top-0 z-50 flex items-center justify-between border-b border-neutral-100 bg-white px-4 py-3">
-        <div className="flex items-center gap-2">
-          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[#00D54B] text-lg font-black text-white shadow-sm">
-            S
-          </div>
-        </div>
-        <div className="flex items-center gap-2 bg-[#00D54B]/10 text-[#00D54B] px-3 py-1.5 rounded-full text-xs font-bold border border-[#00D54B]/20">
-          <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-            <path clipRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" fillRule="evenodd"></path>
-          </svg>
-          Secure
-        </div>
-      </header>
-
-      <main className="flex-1 bg-[#f5f5f5] flex justify-center pt-10 overflow-auto">
-        <div className="w-full max-w-[560px] px-5 pb-10">
-          {paymentStatus === 'completed' ? (
-            <div className="bg-white rounded-[22px] p-8 text-center space-y-4 shadow-sm border border-gray-200">
-              <div className="w-16 h-16 bg-emerald-100 text-[#00D54B] rounded-full flex items-center justify-center mx-auto text-3xl font-bold">
-                ✓
-              </div>
-              <h2 className="text-2xl font-black text-gray-900">Payment Successful!</h2>
-              <p className="text-gray-500 text-sm">Your payment was completed successfully.</p>
+    <div className="bg-[#00D54B] flex flex-col h-dvh overflow-hidden font-sans items-center justify-between py-6 px-4 select-none">
+      
+      <div className="w-full max-w-[380px] flex flex-col items-center flex-1 justify-center">
+        {paymentStatus === 'completed' ? (
+          <div className="bg-white rounded-[32px] p-8 text-center space-y-4 shadow-2xl w-full">
+            <div className="w-16 h-16 bg-emerald-100 text-[#00D54B] rounded-full flex items-center justify-center mx-auto text-3xl font-bold">
+              ✓
             </div>
-          ) : (
-            <>
-              <div className="bg-white rounded-[22px] border border-gray-200 shadow-sm w-full max-w-[480px] mx-auto overflow-hidden">
-                <div className="pt-10 pb-2 text-center">
-                  <p className="text-[18px] text-gray-400 font-medium">Scan or tap to pay</p>
-                  <h2 className="text-[64px] leading-none font-black text-[#0f172a] mt-2">${amount}</h2>
+            <h2 className="text-2xl font-black text-gray-900">Payment Successful!</h2>
+            <p className="text-gray-500 text-sm">Your payment was completed successfully.</p>
+          </div>
+        ) : (
+          <div className="w-full flex flex-col items-center">
+            
+            {/* Header Text & Amount */}
+            <p className="text-[14px] font-bold tracking-wider uppercase text-white mb-1">
+              Scan or tap to pay
+            </p>
+            <h1 className="text-[52px] leading-none font-black text-white mb-5 tracking-tight">
+              ${amount}
+            </h1>
+
+            {/* QR Code Box - চারপাশ থেকে সুন্দর হোয়াইট প্যাডিং এবং ক্যাশঅ্যাপ লুক */}
+            <div className="relative bg-white rounded-[32px] shadow-2xl w-[320px] h-[320px] flex items-center justify-center overflow-hidden mb-4 p-5">
+              {loading ? (
+                <div className="w-full h-full flex items-center justify-center">
+                  <div className="h-10 w-10 border-4 border-[#00D54B] border-t-transparent rounded-full animate-spin" />
                 </div>
+              ) : paymentData?.qrCodeUrl ? (
+                <img 
+                  src={paymentData.qrCodeUrl} 
+                  alt="QR" 
+                  className="w-full h-full object-contain" 
+                  style={{ 
+                    imageRendering: 'crisp-edges',
+                    transform: 'scale(1.05)' // কিউআর কোডের ডটগুলো ছোট ও কম্প্যাক্ট দেখানোর জন্য স্কেল অ্যাডজাস্ট করা হয়েছে
+                  }}
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-red-500 font-bold text-sm">
+                  QR unavailable
+                </div>
+              )}
 
-                <div className="relative px-5">
-                  <div className="relative rounded-xl overflow-hidden">
-                    {loading ? (
-                      <div className="aspect-square flex items-center justify-center">
-                        <div className="h-10 w-10 border-4 border-[#00D54B] border-t-transparent rounded-full animate-spin" />
-                      </div>
-                    ) : paymentData?.qrCodeUrl ? (
-                      <img src={paymentData.qrCodeUrl} alt="QR" className="w-full aspect-square object-contain" />
-                    ) : (
-                      <div className="aspect-square flex items-center justify-center text-red-500 font-bold">
-                        QR unavailable
-                      </div>
-                    )}
-
-                    {!loading && paymentData?.qrCodeUrl && (
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        <div className="bg-[#00D54B] w-28 h-28 rounded-[28px] shadow-xl border-[8px] border-white flex items-center justify-center">
-                          <span className="text-white text-7xl font-black leading-none">$</span>
-                        </div>
-                      </div>
-                    )}
+              {/* Center CashApp Logo Inside QR - আরও স্পষ্ট এবং সুন্দর করা হয়েছে */}
+              {!loading && paymentData?.qrCodeUrl && (
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                  <div className="bg-[#00D54B] w-[72px] h-[72px] rounded-[20px] shadow-lg border-[4px] border-white flex items-center justify-center">
+                    <span className="text-white text-4xl font-black leading-none">$</span>
                   </div>
                 </div>
+              )}
+            </div>
 
-                <div className="py-5 text-center">
-                  <p className="text-[24px] font-bold text-gray-900">Waiting for payment.</p>
-                </div>
-              </div>
+            {/* Waiting Status Text */}
+            <div className="text-white font-bold text-[15px] tracking-wide">
+              Waiting for payment.
+            </div>
+          </div>
+        )}
 
-              <button
-                onClick={handleCashAppRedirect}
-                disabled={loading || !paymentData}
-                className="mt-6 w-full h-[68px] rounded-[20px] bg-[#00D54B] text-white font-bold text-[30px] flex items-center justify-center gap-5 shadow-lg hover:bg-[#00c64a] transition cursor-pointer disabled:bg-gray-300"
-              >
-                <div className="bg-black rounded-lg p-2">
-                  <span className="text-white text-xl font-black">$</span>
-                </div>
-                <span className="text-[22px] font-bold">Pay now</span>
-                <span className="bg-white/20 px-3 py-1 rounded-md text-[12px] uppercase font-bold">Recommended</span>
-              </button>
-            </>
-          )}
+        {error && <p className="text-white text-xs text-center font-bold mt-4">{error}</p>}
+      </div>
 
-          {error && <p className="text-red-500 text-xs text-center font-bold mt-4">{error}</p>}
-        </div>
-      </main>
+      {/* Bottom Black Pay Now Button */}
+      <div className="w-full max-w-[380px] pb-2">
+        <button
+          onClick={handleCashAppRedirect}
+          disabled={loading || !paymentData}
+          className="w-full h-[64px] rounded-[24px] bg-black text-white font-bold flex items-center justify-between px-6 shadow-2xl hover:bg-neutral-900 transition cursor-pointer disabled:opacity-50"
+        >
+          <div className="flex items-center gap-3">
+            <span className="text-[#00D54B] text-2xl font-black">$</span>
+            <span className="text-xl font-bold tracking-tight text-white">Pay now</span>
+          </div>
+          <span className="bg-[#00D54B]/20 text-[#00D54B] text-[10px] font-black uppercase px-2.5 py-1 rounded-md tracking-widest border border-[#00D54B]/30">
+            RECOMMENDED
+          </span>
+        </button>
+      </div>
+
     </div>
   );
 };

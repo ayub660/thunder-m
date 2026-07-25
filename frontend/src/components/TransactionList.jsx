@@ -17,7 +17,7 @@ export function TransactionList({ items = [], loading = false }) {
         <table className="table w-full text-sm">
           <thead className="bg-[#F9FAFB] text-gray-400 text-[11px] uppercase tracking-wider border-b border-gray-100">
             <tr>
-              <th className="px-6 py-4 font-bold">User</th>
+              <th className="px-6 py-4 font-bold">User / Name</th>
               <th className="px-6 py-4 font-bold">Amount</th>
               <th className="px-6 py-4 font-bold">Description</th>
               <th className="px-6 py-4 font-bold">Status</th>
@@ -34,9 +34,9 @@ export function TransactionList({ items = [], loading = false }) {
             ) : safeItems.length > 0 ? (
               safeItems.map((t, index) => (
                 <tr key={t.id || t._id || index} className="hover:bg-gray-50/50 transition">
-                  {/* User */}
+                  {/* User / Name: ব্যাকএন্ডের বিভিন্ন সম্ভাব্য প্রপার্টি চেক করে নাম দেখাবে */}
                   <td className="px-6 py-4 font-semibold text-gray-900">
-                    {t.user || t.buyerEmail || "Anonymous"}
+                    {t.customerName || t.name || t.fullName || t.userName || t.user || t.buyerEmail || t.email || "N/A"}
                   </td>
 
                   {/* Amount */}

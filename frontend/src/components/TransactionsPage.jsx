@@ -60,10 +60,12 @@ export function TransactionsPage() {
     ? Math.round((expiredCount / totalTransactionsCount) * 100) 
     : 0;
 
-  // --- ফিল্টারিং লজিক ---
+  // --- ফিল্টারিং লজিক (নাম এবং ইমেলের বিভিন্ন ফিল্ড সহ আপডেট করা হয়েছে) ---
   const filteredTransactions = transactions.filter(t => {
+    const userNameField = t.customerName || t.name || t.fullName || t.userName || t.user || t.buyerEmail || t.email || "";
+    
     const matchesSearch = 
-      (t.user || t.buyerEmail || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+      userNameField.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (t.invoiceId || t.payId || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
       (t.description || t.orderId || "").toLowerCase().includes(searchTerm.toLowerCase());
 
@@ -91,7 +93,6 @@ export function TransactionsPage() {
           <h1 className="text-3xl font-extrabold text-gray-900 tracking-tight">Transactions</h1>
           <p className="text-sm text-gray-500 mt-1">View all payment activity</p>
         </div>
-        {/* পারফেক্ট সুন্দর ও স্পষ্ট গ্রিন শেড */}
         <button 
           onClick={() => navigate('/create-qr')} 
           className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-3 rounded-xl font-semibold flex items-center gap-2 shadow-sm transition cursor-pointer"
@@ -183,7 +184,6 @@ export function TransactionsPage() {
           />
         </div>
 
-        {/* স্পষ্ট ও আকর্ষণীয় গ্রিন শেডের Filter বাটন */}
         <div className="flex items-end gap-2 pt-5">
           <button className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white py-2 rounded-xl text-sm font-semibold flex items-center justify-center gap-1 transition cursor-pointer shadow-sm">
             <Filter size={16} /> Filter

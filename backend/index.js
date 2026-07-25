@@ -5,6 +5,7 @@ const cors = require('cors');
 const QRCode = require('qrcode');
 const dns = require('dns');
 const axios = require('axios');
+const crypto = require('crypto');
 
 // DNS সার্ভার এবং IPv4 প্রিফারেন্স সেটআপ
 dns.setServers(['8.8.8.8', '1.1.1.1', '8.8.4.4']);
@@ -53,7 +54,6 @@ async function connectDB() {
     console.error("MongoDB Connection Error:", error);
   }
 }
-connectDB();
 
 // --- 1. PAYMENT LINKS & CHECKOUT API ---
 app.get('/api/payment-links', async (req, res) => {
@@ -102,6 +102,58 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
+// ইনভয়েস স্ট্যাটাস চেক করার রাউট
+app.get('/i/:invoiceId/status', async (req, res) => {
+  try {
+    const { invoiceId } = req.params;
+
+    // ১. প্রথমে আপনার লোকাল ডাটাবেজে ট্রানজ্যাকশন স্ট্যাটাস চেক করতে পারেন
+    if (typeof transactionsCollection !== 'undefined' && transactionsCollection) {
+      const localTx = await transactionsCollection.findOne({ invoiceId: invoiceId });
+      if (localTx && (localTx.status === 'completed' || localTx.status === 'Paid')) {
+        return res.status(200).json({ status: 'completed' });
+      }
+    }
+
+    // ২. যদি BTCPay Server কনফিগার করা থাকে, তবে সরাসরি BTCPay থেকে রিয়েল-টাইম স্ট্যাটাস এনে চেক করতে পারেন
+    const btcpayUrl = process.env.BTCPAY_URL;
+    const storeId = process.env.BTCPAY_STORE_ID;
+    const apiKey = process.env.BTCPAY_API_KEY;
+
+    if (btcpayUrl && storeId && apiKey) {
+      const normalizedBtcpayUrl = btcpayUrl.endsWith('/') ? btcpayUrl : `${btcpayUrl}/`;
+      const endpoint = `${normalizedBtcpayUrl}api/v1/stores/${storeId}/invoices/${invoiceId}`;
+
+      const btcpayRes = await axios.get(endpoint, {
+        headers: { 'Authorization': `token ${apiKey}` }
+      });
+
+      if (btcpayRes && btcpayRes.data) {
+        const status = btcpayRes.data.status; // সাধারণত 'Settled', 'Complete', 'Paid' ইত্যাদি হতে পারে
+        
+        // স্ট্যাটাস যদি পেমেন্ট সম্পূর্ণ হওয়া বোঝায়
+        if (status === 'Settled' || status === 'Complete' || status === 'Paid') {
+          // চাইলে এখানে লোকাল ডাটাবেজ আপডেট করে নিতে পারেন
+          if (typeof transactionsCollection !== 'undefined' && transactionsCollection) {
+            await transactionsCollection.updateOne(
+              { invoiceId: invoiceId },
+              { $set: { status: 'completed' } }
+            );
+          }
+          return res.status(200).json({ status: 'completed' });
+        }
+      }
+    }
+
+    // অন্যথায় স্ট্যাটাস পেন্ডিং রিটার্ন করবে
+    return res.status(200).json({ status: 'pending' });
+
+  } catch (error) {
+    console.error("Error checking invoice status:", error.message);
+    res.status(500).json({ status: 'error', error: error.message });
+  }
+});
+// --- BTCPAY GATEWAY QR & INVOICE API (CashApp Style Dynamic Generation) ---
 // --- BTCPAY GATEWAY QR & INVOICE API (CashApp Style Dynamic Generation) ---
 app.post('/api/generate-gateway-qr', async (req, res) => {
     try {
@@ -166,7 +218,7 @@ app.post('/api/generate-gateway-qr', async (req, res) => {
         const invoiceId = invoice.id;
         let checkoutLink = invoice.checkoutLink || `${normalizedBtcpayUrl}i/${invoiceId}`;
 
-        // --- সঠিকভাবে Lightning Invoice (bolt11) বের করা ---
+        // --- সঠিকভাবে Lightning Invoice (bolt11) বের করার আপডেট করা লজিক ---
         let bolt11Invoice = "";
         try {
             const paymentMethodsRes = await axios.get(`${normalizedBtcpayUrl}api/v1/stores/${storeId}/invoices/${invoiceId}/payment-methods`, {
@@ -185,23 +237,30 @@ app.post('/api/generate-gateway-qr', async (req, res) => {
 
                 if (lightningMethod) {
                     bolt11Invoice = lightningMethod.destination || lightningMethod.bolt11 || lightningMethod.paymentLink || "";
+                } else {
+                    const found = methods.find(m => m.destination && m.destination.startsWith('lnbc'));
+                    if (found) bolt11Invoice = found.destination;
                 }
             }
         } catch (pmErr) {
             console.error("Could not fetch payment methods for bolt11:", pmErr.message);
         }
 
-        // যদি পেমেন্ট মেথড এন্ডপয়েন্ট থেকে না পাওয়া যায়, তবে মূল ইনভয়েস অবজেক্টের ভেতর থেকে খোঁজা
         if (!bolt11Invoice && invoice.paymentMethods) {
-            const lnMethod = invoice.paymentMethods.find(m => m.paymentMethod === "BTC-LightningNetwork");
+            const lnMethod = invoice.paymentMethods.find(m => m.paymentMethod === "BTC-LightningNetwork" || m.paymentMethodId === "BTC-LightningNetwork");
             if (lnMethod) {
                 bolt11Invoice = lnMethod.destination || lnMethod.bolt11 || "";
             }
         }
 
-        console.log("Resolved Lightning Invoice (bolt11):", bolt11Invoice);
+        // যদি কোনোভাবেই লাইটনিং স্ট্রিং না পাওয়া যায়, তবে ফলব্যাক হিসেবে ইনভয়েস আইডি বসবে
+        if (!bolt11Invoice) {
+            bolt11Invoice = invoiceId;
+           
+        }
+            
+        
 
-        // ক্যাশঅ্যাপ স্টাইলের হাই রেজুলেশন QR কোড জেনারেট করা (QR-এ checkoutLink ব্যবহার করা হয়েছে যেন বড় lnbc স্ট্রিংয়ের কারণে এরর না মারTransactions মারে)
         let qrCodeImageBase64 = "";
         try {
             qrCodeImageBase64 = await QRCode.toDataURL(checkoutLink, {
@@ -241,7 +300,7 @@ app.post('/api/generate-gateway-qr', async (req, res) => {
             checkoutLink: checkoutLink,
             amount: amount || "10.00",
             qrCodeUrl: qrCodeImageBase64,
-            bolt11: bolt11Invoice,         
+            bolt11: bolt11Invoice,        
             lightningInvoice: bolt11Invoice
         });
 
@@ -253,6 +312,8 @@ app.post('/api/generate-gateway-qr', async (req, res) => {
         });
     }
 });
+
+
 
 // --- 3. DASHBOARD STATS & BALANCE API ---
 app.get('/api/balance', async (req, res) => {
@@ -312,10 +373,79 @@ app.get('/api/transactions', async (req, res) => {
         res.status(500).json({ success: false, error: 'Server error' });
     }
 });
+// Webhook
 
-app.post("/api/btcpay/webhook", (req, res) => {
-    console.log("BTCPay webhook received:", req.body);
-    res.sendStatus(200);
+app.post("/api/btcpay/webhook", async (req, res) => {
+    try {
+        const event = req.body;
+        const btcpaySig = req.headers['btcpay-sig'];
+        const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET;
+
+        // সিকিউরিটি সিগনেচার ভ্যালিডেশন (যদি .env এ সিক্রেট থাকে)
+        if (WEBHOOK_SECRET && btcpaySig) {
+            const hmac = crypto.createHmac('sha256', WEBHOOK_SECRET);
+            const digest = 'sha256=' + hmac.update(JSON.stringify(req.body)).digest('hex');
+            
+            if (btcpaySig !== digest) {
+                console.warn('⚠️ Invalid Webhook Signature Received!');
+                return res.status(400).send('Invalid signature');
+            }
+        }
+
+        console.log("-----------------------------------------");
+        console.log("✅ BTCPay Webhook Received Event Type:", event.type);
+
+        // পেমেন্ট সফল বা সেটেল হলে ডাটাবেজ আপডেট করার লজিক
+        if (event.type === 'InvoiceSettled' || event.type === 'InvoicePaymentSettled') {
+            const invoiceId = event.invoiceId;
+            const bolt11Invoice = event.bolt11; 
+            const amount = event.amount;
+
+            console.log(`🎉 Payment Settled via Webhook! Invoice ID: ${invoiceId}`);
+
+            if (typeof transactionsCollection !== 'undefined' && transactionsCollection) {
+                await transactionsCollection.updateOne(
+                    { invoiceId: invoiceId },
+                    { 
+                        $set: { 
+                            status: 'Paid',
+                            bolt11: bolt11Invoice || "" 
+                        } 
+                    }
+                );
+                console.log(`Database updated to 'Paid' for Invoice ID: ${invoiceId}`);
+            }
+        }
+
+        console.log("-----------------------------------------");
+        res.status(200).json({ received: true });
+
+    } catch (error) {
+        console.error("❌ Webhook Error Processing:", error);
+        res.status(500).send('Internal Server Error');
+    }
+});
+
+// --- পেমেন্ট লিংক ডিলিট করার রাউট ---
+app.delete('/api/payment-links/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).json({ success: false, message: "Invalid Link ID format!" });
+    }
+
+    const result = await paymentLinksCollection.deleteOne({ _id: new ObjectId(id) });
+
+    if (result.deletedCount === 0) {
+      return res.status(404).json({ success: false, message: "Payment link not found!" });
+    }
+
+    res.status(200).json({ success: true, message: "Payment link deleted successfully!" });
+  } catch (error) {
+    console.error("Delete Payment Link Error:", error);
+    res.status(500).json({ success: false, error: "Server error while deleting payment link" });
+  }
 });
 
 // --- 5. WITHDRAWAL API ---
@@ -547,6 +677,98 @@ app.delete('/api/admin/users/:id', async (req, res) => {
   }
 });
 
+
+// --- নতুন পেমেন্ট লিংক তৈরির রাউট (Create Link) ---
+app.post('/api/create-payment-link', async (req, res) => {
+  try {
+    const { name, url, theme, amount, createdAt } = req.body;
+    
+    const selectedTheme = theme || 'light';
+    const imagePath = selectedTheme === 'green' ? '/src/asset/cashapp_green.png' : '/src/asset/cashapp_light.png';
+
+    const newLink = {
+      name,
+      url,
+      theme: selectedTheme,
+      amount,
+      image: imagePath, // ব্যাকএন্ড থেকে থিম অনুযায়ী সঠিক ইমেজ সেট করা হলো
+      createdAt: createdAt || new Date()
+    };
+
+    const result = await paymentLinksCollection.insertOne(newLink);
+    res.status(201).json({ _id: result.insertedId, ...newLink });
+  } catch (error) {
+    console.error("Error:", error);
+    res.status(500).json({ success: false, error: "Server error" });
+  }
+});
+// --- কার্ড আপডেট বা Save করার রাউট (Update Link & Theme) ---
+app.put('/api/payment-links/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { theme, image, name, url } = req.body;
+
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).json({ success: false, message: "Invalid Link ID format!" });
+    }
+
+    // ডাটাবেজে theme এবং image আপডেট করা হচ্ছে
+    const result = await paymentLinksCollection.updateOne(
+      { _id: new ObjectId(id) },
+      { 
+        $set: { 
+          theme: theme, 
+          image: image,
+          name: name,
+          url: url
+        } 
+      }
+    );
+
+    if (result.matchedCount === 0) {
+      return res.status(404).json({ success: false, message: "Payment link not found!" });
+    }
+
+    res.status(200).json({ success: true, message: "Payment link and theme updated successfully!" });
+  } catch (error) {
+    console.error("Update Payment Link Error:", error);
+    res.status(500).json({ success: false, error: "Server error while updating payment link" });
+  }
+});
+
+// --- ডিলিট রাউট (যদি না থাকে) ---
+app.delete('/api/payment-links/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    await paymentLinksCollection.deleteOne({ _id: new ObjectId(id) });
+    res.status(200).json({ success: true, message: "Deleted successfully" });
+  } catch (error) {
+    res.status(500).json({ success: false, error: "Failed to delete" });
+  }
+});
+
+// --- নির্দিষ্ট পেমেন্ট লিংকের ডিটেইলস আনার রাউট ---
+app.get('/api/payment-links/:name', async (req, res) => {
+  try {
+    const { name } = req.params;
+    
+    let link = await paymentLinksCollection.findOne({ name: name });
+
+    if (!link && ObjectId.isValid(name)) {
+      link = await paymentLinksCollection.findOne({ _id: new ObjectId(name) });
+    }
+
+    if (!link) {
+      return res.status(404).json({ success: false, message: "Payment link not found" });
+    }
+
+    res.status(200).json(link);
+  } catch (error) {
+    console.error("Error fetching single payment link:", error);
+    res.status(500).json({ success: false, error: "Server error while fetching link" });
+  }
+});
+
 // --- PAYMENT STATUS CHECK API ---
 app.get('/i/:linkId/status', async (req, res) => {
   try {
@@ -610,6 +832,9 @@ app.get('/i/:linkId/status', async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`Backend server is running smoothly on port ${PORT}`);
+// ডাটাবেজ কানেক্ট করে সার্ভার রান করা নিশ্চিত করা হলো
+connectDB().then(() => {
+  app.listen(PORT, () => {
+    console.log(`Backend server is running smoothly on port ${PORT}`);
+  });
 });

