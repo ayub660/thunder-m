@@ -16,10 +16,13 @@ const AmountSelectionPage = () => {
     theme: 'light'
   });
 
+  // লোকাল ও লাইভ (Vercel) পরিবেশের জন্য ডায়নামিক API বেস URL
+  const API_URL = import.meta.env.MODE === 'production' ? '' : 'http://localhost:5000';
+
   useEffect(() => {
     const fetchLinkDetails = async () => {
       try {
-        const response = await axios.get(`http://localhost:5000/api/payment-links/${linkId}`);
+        const response = await axios.get(`${API_URL}/api/payment-links/${linkId}`);
         if (response.data) {
           setLinkInfo({
             name: response.data.name || linkId,
@@ -61,7 +64,7 @@ const AmountSelectionPage = () => {
     setError('');
 
     try {
-      const response = await axios.post('http://localhost:5000/api/generate-gateway-qr', {
+      const response = await axios.post(`${API_URL}/api/generate-gateway-qr`, {
         linkId: linkId,
         amount: amount,
         buyerEmail: 'customer@example.com',

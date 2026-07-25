@@ -23,6 +23,9 @@ export const DashboardCards = () => {
     totalWithdrawn: "$0.00"
   });
 
+  // লোকাল এবং Vercel লাইভ সার্ভারের জন্য ডাইনামিক API বেস URL
+  const API_URL = import.meta.env.MODE === 'production' ? '' : 'http://localhost:5000';
+
   useEffect(() => {
     fetchPaymentLinks();
     fetchStats();
@@ -30,7 +33,7 @@ export const DashboardCards = () => {
 
   const fetchPaymentLinks = async () => {
     try {
-      const response = await axios.get('http://localhost:5000/api/payment-links');
+      const response = await axios.get(`${API_URL}/api/payment-links`);
       const linksWithTheme = response.data.map(link => {
         const isGreen = link.theme === 'green';
         return {
@@ -47,7 +50,7 @@ export const DashboardCards = () => {
 
   const fetchStats = async () => {
     try {
-      const response = await axios.get('http://localhost:5000/api/balance');
+      const response = await axios.get(`${API_URL}/api/balance`);
       const data = response.data;
       setStats({
         balance: `$${(data.balance || 0).toLocaleString()}.00`,
@@ -97,7 +100,7 @@ export const DashboardCards = () => {
     };
 
     try {
-      const response = await axios.post('http://localhost:5000/api/create-payment-link', newLinkData);
+      const response = await axios.post(`${API_URL}/api/create-payment-link`, newLinkData);
       
       const createdItem = {
         ...response.data,
@@ -138,7 +141,7 @@ export const DashboardCards = () => {
     }).then(async (result) => {
       if (result.isConfirmed) {
         try {
-          await axios.delete(`http://localhost:5000/api/payment-links/${id}`);
+          await axios.delete(`${API_URL}/api/payment-links/${id}`);
           setPaymentLinks(prevLinks => prevLinks.filter(link => link._id !== id));
           Swal.fire(
             'Deleted!',
@@ -160,7 +163,7 @@ export const DashboardCards = () => {
   // ডাটাবেজে কার্ডের থিম ও সেটিংস সেভ করার ফাংশন
   const handleSaveCardSettings = async (link) => {
     try {
-      await axios.put(`http://localhost:5000/api/payment-links/${link._id}`, {
+      await axios.put(`${API_URL}/api/payment-links/${link._id}`, {
         theme: link.theme,
         name: link.name,
         url: `${selectedDomain}/${link.name}`

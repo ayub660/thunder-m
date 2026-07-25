@@ -11,11 +11,14 @@ const PaymentCheckout = () => {
   const [error, setError] = useState('');
   const [paymentStatus, setPaymentStatus] = useState('pending'); // pending, completed
 
+  // লোকাল এবং Vercel লাইভ সার্ভারের জন্য ডাইনামিক API বেস URL
+  const API_URL = import.meta.env.MODE === 'production' ? '' : 'http://localhost:5000';
+
   // লিঙ্ক বা প্রডাক্টের ডিটেইলস ফেচ করা
   useEffect(() => {
     const fetchLinkDetails = async () => {
       try {
-        const response = await axios.get(`http://localhost:5000/api/payment-links/${linkId || 'LightningPayment'}`);
+        const response = await axios.get(`${API_URL}/api/payment-links/${linkId || 'LightningPayment'}`);
         setLinkData(response.data);
         if (response.data?.amount) setAmount(response.data.amount.toString());
       } catch (error) {
@@ -23,7 +26,7 @@ const PaymentCheckout = () => {
       }
     };
     fetchLinkDetails();
-  }, [linkId]);
+  }, [linkId, API_URL]);
 
   // ইনভয়েস তৈরি করার হ্যান্ডলার
   const handleGenerateInvoice = async (e) => {
@@ -32,7 +35,7 @@ const PaymentCheckout = () => {
     setError('');
 
     try {
-      const response = await axios.post('http://localhost:5000/api/generate-gateway-qr', {
+      const response = await axios.post(`${API_URL}/api/generate-gateway-qr`, {
         linkId: linkId || 'LightningPayment',
         amount: amount,
         buyerEmail: 'customer@example.com',
@@ -58,7 +61,7 @@ const PaymentCheckout = () => {
     if (paymentData && paymentData.invoiceId && paymentStatus === 'pending') {
       interval = setInterval(async () => {
         try {
-          const res = await axios.get(`http://localhost:5000/i/${paymentData.invoiceId}/status`);
+          const res = await axios.get(`${API_URL}/i/${paymentData.invoiceId}/status`);
           if (res.data.status === 'completed' || res.data.status === 'Paid') {
             setPaymentStatus('completed');
             clearInterval(interval);
@@ -69,7 +72,7 @@ const PaymentCheckout = () => {
       }, 3000);
     }
     return () => clearInterval(interval);
-  }, [paymentData, paymentStatus]);
+  }, [paymentData, paymentStatus, API_URL]);
 
   const handleOpenCheckout = () => {
     if (paymentData?.checkoutLink) {
@@ -84,9 +87,9 @@ const PaymentCheckout = () => {
     alert("Copied to clipboard!");
   };
 
-  // থিম অনুযায়ী কালার ও স্টাইল নির্ধারণ (Green বা Light)
+  // থিম অনুযায়ী কালার ও স্টাইল নির্ধারণ (Green বা Light)
   const isGreenTheme = linkData?.theme === 'green';
-  const primaryColor = isGreenTheme ? '#16a34a' : '#00D54B'; // গ্রিন থিমের জন্য গাঢ় সবুজ, লাইটের জন্য ক্যাশঅ্যাপ গ্রিন
+  const primaryColor = isGreenTheme ? '#16a34a' : '#00D54B'; // গ্রিন থিমের জন্য গাঢ় সবুজ, লাইটের জন্য ক্যাশঅ্যাপ গ্রিন
   const bgColorClass = isGreenTheme ? 'bg-green-50/40' : 'bg-[#f9f9f9]';
 
   return (

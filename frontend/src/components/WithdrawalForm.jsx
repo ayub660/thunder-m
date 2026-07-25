@@ -28,14 +28,17 @@ export function WithdrawalForm({ onSuccess }) {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
 
+  // লোকাল এবং Vercel লাইভ সার্ভারের জন্য ডাইনামিক API বেস URL
+  const API_URL = import.meta.env.MODE === 'production' ? '' : 'http://localhost:5000';
+
   const fetchData = async () => {
     try {
       setHistoryLoading(true);
       
-      const balanceRes = await axios.get('http://localhost:5000/api/balance');
+      const balanceRes = await axios.get(`${API_URL}/api/balance`);
       setBalance(balanceRes.data.balance || 0);
 
-      const historyRes = await axios.get('http://localhost:5000/api/my-withdrawals');
+      const historyRes = await axios.get(`${API_URL}/api/my-withdrawals`);
       const withdrawalsList = Array.isArray(historyRes.data) ? historyRes.data : (historyRes.data.withdrawals || []);
       setMyWithdrawals(withdrawalsList);
 
@@ -66,7 +69,7 @@ export function WithdrawalForm({ onSuccess }) {
 
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [API_URL]);
 
   const submit = async (e) => {
     e.preventDefault();
@@ -87,7 +90,7 @@ export function WithdrawalForm({ onSuccess }) {
 
     setLoading(true);
     try {
-      await axios.post('http://localhost:5000/api/withdraw', { amount: n });
+      await axios.post(`${API_URL}/api/withdraw`, { amount: n });
       
       const formattedAmount = formatCurrency(n);
       setSuccessMsg(`Withdrawal request of ${formattedAmount} submitted successfully!`);

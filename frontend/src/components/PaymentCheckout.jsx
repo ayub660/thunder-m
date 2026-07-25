@@ -15,12 +15,15 @@ const PaymentCheckout = () => {
   const [error, setError] = useState('');
   const [paymentStatus, setPaymentStatus] = useState('pending');
 
+  // লোকাল এবং Vercel লাইভ সার্ভারের জন্য ডাইনামিক API বেস URL
+  const API_URL = import.meta.env.MODE === 'production' ? '' : 'http://localhost:5000';
+
   useEffect(() => {
     if (!passedData) {
       const generateInvoiceDirectly = async () => {
         setLoading(true);
         try {
-          const response = await axios.post('http://localhost:5000/api/generate-gateway-qr', {
+          const response = await axios.post(`${API_URL}/api/generate-gateway-qr`, {
             linkId: linkId,
             amount: amount,
             buyerEmail: 'customer@example.com',
@@ -41,14 +44,14 @@ const PaymentCheckout = () => {
 
       generateInvoiceDirectly();
     }
-  }, [linkId, passedData, amount]);
+  }, [linkId, passedData, amount, API_URL]);
 
   useEffect(() => {
     let interval;
     if (invoiceId && paymentStatus === 'pending') {
       interval = setInterval(async () => {
         try {
-          const res = await axios.get(`http://localhost:5000/i/${invoiceId}/status`);
+          const res = await axios.get(`${API_URL}/i/${invoiceId}/status`);
           if (res.data.status === 'completed' || res.data.status === 'Paid') {
             setPaymentStatus('completed');
             clearInterval(interval);
@@ -59,7 +62,7 @@ const PaymentCheckout = () => {
       }, 5000);
     }
     return () => clearInterval(interval);
-  }, [invoiceId, paymentStatus]);
+  }, [invoiceId, paymentStatus, API_URL]);
 
   const handleCashAppRedirect = () => {
     const lightningInvoice = paymentData?.bolt11 || paymentData?.lightningInvoice || paymentData?.paymentRequest;
@@ -95,7 +98,7 @@ const PaymentCheckout = () => {
               ${amount}
             </h1>
 
-            {/* QR Code Box - চারপাশ থেকে সুন্দর হোয়াইট প্যাডিং এবং ক্যাশঅ্যাপ লুক */}
+            {/* QR Code Box - চারপাশ থেকে সুন্দর হোয়াইট প্যাডিং এবং ক্যাশঅ্যাপ লুক */}
             <div className="relative bg-white rounded-[32px] shadow-2xl w-[320px] h-[320px] flex items-center justify-center overflow-hidden mb-4 p-5">
               {loading ? (
                 <div className="w-full h-full flex items-center justify-center">
@@ -108,7 +111,7 @@ const PaymentCheckout = () => {
                   className="w-full h-full object-contain" 
                   style={{ 
                     imageRendering: 'crisp-edges',
-                    transform: 'scale(1.05)' // কিউআর কোডের ডটগুলো ছোট ও কম্প্যাক্ট দেখানোর জন্য স্কেল অ্যাডজাস্ট করা হয়েছে
+                    transform: 'scale(1.05)' // কিউআর কোডের ডটগুলো ছোট ও কম্প্যাক্ট দেখানোর জন্য স্কেল অ্যাডজাস্ট করা হয়েছে
                   }}
                 />
               ) : (
@@ -117,7 +120,7 @@ const PaymentCheckout = () => {
                 </div>
               )}
 
-              {/* Center CashApp Logo Inside QR - আরও স্পষ্ট এবং সুন্দর করা হয়েছে */}
+              {/* Center CashApp Logo Inside QR - আরও স্পষ্ট এবং সুন্দর করা হয়েছে */}
               {!loading && paymentData?.qrCodeUrl && (
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                   <div className="bg-[#00D54B] w-[72px] h-[72px] rounded-[20px] shadow-lg border-[4px] border-white flex items-center justify-center">

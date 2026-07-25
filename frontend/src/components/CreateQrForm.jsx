@@ -11,9 +11,12 @@ export const CreateQrForm = () => {
   const [loading, setLoading] = useState(false);
   const [linkList, setLinkList] = useState([]);
 
-  // ব্যাকএন্ড থেকে আগের ট্রানজেকশন বা লিংক লিস্ট ফেচ করা (localhost ব্যবহার করে)
+  // লোকাল ও লাইভ (Vercel) পরিবেশের জন্য ডায়নামিক API বেস URL
+  const API_URL = import.meta.env.MODE === 'production' ? '' : 'http://localhost:5000';
+
+  // ব্যাকএন্ড থেকে আগের ট্রানজেকশন বা লিংক লিস্ট ফেচ করা
   const fetchLinks = () => {
-    fetch('http://localhost:5000/api/transactions')
+    fetch(`${API_URL}/api/transactions`)
       .then(res => res.json())
       .then(data => {
         const items = data.success ? data.transactions : (Array.isArray(data) ? data : []);
@@ -69,7 +72,7 @@ export const CreateQrForm = () => {
     
     setLoading(true);
     try {
-      const response = await fetch('http://localhost:5000/api/generate-gateway-qr', {
+      const response = await fetch(`${API_URL}/api/generate-gateway-qr`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -134,11 +137,11 @@ export const CreateQrForm = () => {
               <Zap size={13} /> CashApp Style Gateway
             </div>
             <h1 className="text-xl md:text-2xl font-extrabold text-gray-900 tracking-tight">Create Lightning QR</h1>
-            <p className="text-xs text-gray-400 mt-0.5">Generate dynamic amount lnbc invoice QRs instantly via localhost.</p>
+            <p className="text-xs text-gray-400 mt-0.5">Generate dynamic amount lnbc invoice QRs instantly.</p>
           </div>
           <div className="bg-green-50 text-green-700 px-3.5 py-1.5 rounded-xl font-bold text-xs border border-green-100 flex items-center gap-1.5 shadow-sm">
             <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
-            Online (Localhost)
+            {import.meta.env.MODE === 'production' ? 'Online (Vercel)' : 'Online (Localhost)'}
           </div>
         </div>
 

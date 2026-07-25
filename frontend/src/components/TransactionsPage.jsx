@@ -21,10 +21,13 @@ export function TransactionsPage() {
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
 
+  // লোকাল এবং Vercel লাইভ সার্ভারের জন্য ডাইনামিক API বেস URL
+  const API_URL = import.meta.env.MODE === 'production' ? '' : 'http://localhost:5000';
+
   // ব্যাকএন্ড থেকে রিয়েল ডাটা ফেচ করা
   const fetchTransactions = () => {
     setLoading(true);
-    fetch('http://localhost:5000/api/transactions')
+    fetch(`${API_URL}/api/transactions`)
       .then(res => res.json())
       .then(data => {
         if (data.success && Array.isArray(data.transactions)) {
@@ -42,7 +45,7 @@ export function TransactionsPage() {
 
   useEffect(() => {
     fetchTransactions();
-  }, []);
+  }, [API_URL]);
 
   // --- ডাটাবেজ ডাটা থেকে ডাইনামিক স্ট্যাটস ক্যালকুলেশন ---
   const totalTransactionsCount = transactions.length;
@@ -60,7 +63,7 @@ export function TransactionsPage() {
     ? Math.round((expiredCount / totalTransactionsCount) * 100) 
     : 0;
 
-  // --- ফিল্টারিং লজিক (নাম এবং ইমেলের বিভিন্ন ফিল্ড সহ আপডেট করা হয়েছে) ---
+  // --- Filtering logic ---
   const filteredTransactions = transactions.filter(t => {
     const userNameField = t.customerName || t.name || t.fullName || t.userName || t.user || t.buyerEmail || t.email || "";
     
@@ -87,7 +90,7 @@ export function TransactionsPage() {
 
   return (
     <div className="p-8 bg-[#F9FAFB] min-h-screen">
-      {/* পেজ হেডার */}
+      {/* Page header */}
       <div className="flex justify-between items-center mb-8">
         <div>
           <h1 className="text-3xl font-extrabold text-gray-900 tracking-tight">Transactions</h1>
@@ -101,7 +104,7 @@ export function TransactionsPage() {
         </button>
       </div>
 
-      {/* --- ১. ডাইনামিক স্ট্যাটস কার্ডগুলো --- */}
+      {/* --- ১.Dynamic status card --- */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
         <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm flex flex-col justify-between">
           <span className="text-[11px] font-bold uppercase tracking-wider text-gray-400">Total Transactions</span>
@@ -132,7 +135,7 @@ export function TransactionsPage() {
         </div>
       </div>
 
-      {/* --- ২. ফিল্টার ও সার্চ বার --- */}
+      {/* --- 2 Filter search kora --- */}
       <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm mb-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 items-center">
         <div className="relative">
           <label className="block text-[11px] font-bold uppercase tracking-wider text-gray-400 mb-1">Search</label>
@@ -197,7 +200,7 @@ export function TransactionsPage() {
         </div>
       </div>
 
-      {/* --- ৩. ট্রানজাকশন লিস্ট টেবিল --- */}
+      {/* --- 3 transaction list table --- */}
       <TransactionList items={filteredTransactions} loading={loading} />
     </div>
   );

@@ -40,6 +40,9 @@ export function AppSidebar() {
   // শুধুমাত্র শিম বা শর্ত চেক করা যে ইউজারটি মাস্টার অ্যাডমিন কি না
   const isMasterAdmin = storedUser.role === 'master_admin';
 
+  // লোকাল ও লাইভ (Vercel) পরিবেশের জন্য ডায়নামিক API বেস URL
+  const API_URL = import.meta.env.MODE === 'production' ? '' : 'http://localhost:5000';
+
   // লগআউট হ্যান্ডলার ফাংশন
   const handleLogout = () => {
     localStorage.removeItem('token');
@@ -54,7 +57,7 @@ export function AppSidebar() {
     }
 
     try {
-      const res = await fetch('http://localhost:5000/api/admin/update-password', {
+      const res = await fetch(`${API_URL}/api/admin/update-password`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -112,7 +115,7 @@ export function AppSidebar() {
                   }`}
                 >
                   <Icon className="h-5 w-5" />
-                  {/* যদি উইথড্র অপশন হয় এবং ইউজার মাস্টার অ্যাডমিন হয়, তবে নাম পাল্টে "Withdrawal Requests" দেখাতে পারেন */}
+                  {/* যদি উইথড্র অপশন হয় এবং ইউজার মাস্টার অ্যাডমিন হয়, তবে নাম পাল্টে "Withdrawal Requests" দেখাতে পারেন */}
                   {it.to === "/withdrawals" && isMasterAdmin ? "Withdrawal Requests" : it.label}
                 </Link>
               );

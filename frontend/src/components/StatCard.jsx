@@ -1,6 +1,6 @@
 import React from 'react';
 
-// ভ্যালু ফরম্যাট করার জন্য একটি সাধারণ হেল্পার ফাংশন
+
 const formatCurrency = (val) => {
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
@@ -9,7 +9,7 @@ const formatCurrency = (val) => {
 };
 
 export function StatCard({ label, value, icon: Icon, accent, delta }) {
-  // DaisyUI এর কালার প্যালেটের সাথে ম্যাচ করার জন্য ক্লাসগুলো আপডেট করা হয়েছে
+  
   const bg =
     accent === "success"
       ? "bg-green-100 text-green-600"

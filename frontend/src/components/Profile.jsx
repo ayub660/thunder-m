@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { KeyRound, ShieldCheck, Mail, User } from 'lucide-react';
 
 export function Profile() {
-  // লোকালস্টোরেজ থেকে ইউজারের ইনফো নিরাপদভাবে নেওয়া (undefined প্রিভেন্ট করার জন্য)
+  // লোকালস্টোরেজ থেকে ইউজারের ইনফো নিরাপদভাবে নেওয়া (undefined প্রিভেন্ট করার জন্য)
   const storedUser = (() => {
     try {
       const item = localStorage.getItem('userInfo');
@@ -23,6 +23,9 @@ export function Profile() {
   const [passwordData, setPasswordData] = useState({ oldPassword: '', newPassword: '' });
   const [loading, setLoading] = useState(false);
 
+  // লোকাল এবং Vercel লাইভ সার্ভারের জন্য ডাইনামিক API বেস URL
+  const API_URL = import.meta.env.MODE === 'production' ? '' : 'http://localhost:5000';
+
   const handleUpdatePassword = async (e) => {
     e.preventDefault();
     if (!passwordData.oldPassword || !passwordData.newPassword) {
@@ -31,7 +34,7 @@ export function Profile() {
 
     try {
       setLoading(true);
-      const res = await fetch('http://localhost:5000/api/admin/update-password', {
+      const res = await fetch(`${API_URL}/api/admin/update-password`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

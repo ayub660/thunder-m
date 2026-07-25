@@ -8,11 +8,14 @@ export const WithdrawalsAdmin = () => {
   const [statusFilter, setStatusFilter] = useState('All');
   const [loading, setLoading] = useState(false);
 
+  // লোকাল এবং Vercel লাইভ সার্ভারের জন্য ডাইনামিক API বেস URL
+  const API_URL = import.meta.env.MODE === 'production' ? '' : 'http://localhost:5000';
+
   // ব্যাকএন্ড থেকে উইথড্র রিকোয়েস্টগুলো ফেচ করা
   const fetchWithdrawals = async () => {
     try {
       setLoading(true);
-      const res = await fetch('http://localhost:5000/api/admin/withdrawals');
+      const res = await fetch(`${API_URL}/api/admin/withdrawals`);
       const data = await res.json();
       if (Array.isArray(data)) {
         setWithdrawals(data);
@@ -28,7 +31,7 @@ export const WithdrawalsAdmin = () => {
 
   useEffect(() => {
     fetchWithdrawals();
-  }, []);
+  }, [API_URL]);
 
   // স্ট্যাটাস আপডেট করার ফাংশন (Pending -> Paid)
   const handleUpdateStatus = async (id, newStatus) => {
@@ -44,7 +47,7 @@ export const WithdrawalsAdmin = () => {
 
     if (result.isConfirmed) {
       try {
-        const res = await fetch(`http://localhost:5000/api/admin/withdrawals/${id}`, {
+        const res = await fetch(`${API_URL}/api/admin/withdrawals/${id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ status: newStatus })
@@ -64,7 +67,7 @@ export const WithdrawalsAdmin = () => {
     }
   };
 
-  // সার্চ ও ফিল্টার লজিক (নাম এবং ইমেইল দিয়ে সার্চ করার সুবিধা)
+  // সার্চ ও ফিল্টার লজিক (নাম এবং ইমেইল দিয়ে সার্চ করার সুবিধা)
   const filteredWithdrawals = withdrawals.filter(item => {
     const nameMatch = item.userName?.toLowerCase().includes(searchQuery.toLowerCase()) || false;
     const emailMatch = item.userEmail?.toLowerCase().includes(searchQuery.toLowerCase()) || false;
@@ -160,7 +163,6 @@ export const WithdrawalsAdmin = () => {
               ) : filteredWithdrawals.length > 0 ? (
                 filteredWithdrawals.map((item) => {
                   const usdAmount = Number(item.originalAmount || item.amount || 0);
-                  // ইউজারের নির্দিষ্ট এক্সচেঞ্জ রেট বা ডিফল্ট ১২৪ টাকা দিয়ে বিডিটি ক্যালকুলেশন
                   const userRate = Number(item.exchangeRate || item.rate || 124);
                   const bdtAmount = usdAmount * userRate;
 
@@ -174,7 +176,7 @@ export const WithdrawalsAdmin = () => {
                         </div>
                       </td>
 
-                      {/* ডলারে অ্যামাউন্ট এবং ইউজারের রেট অনুযায়ী বিডিটি হিসাব */}
+                      {/* ডলারে অ্যামাউন্ট এবং ইউজারের রেট অনুযায়ী বিডিটি হিসাব */}
                       <td className="p-5">
                         <div className="font-extrabold text-gray-950">${usdAmount.toFixed(2)}</div>
                         <div className="text-xs text-emerald-600 font-semibold mt-0.5">

@@ -9,6 +9,9 @@ export const UserCreate = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingUserId, setEditingUserId] = useState(null);
 
+  // লোকাল এবং Vercel লাইভ সার্ভারের জন্য ডাইনামিক API বেস URL
+  const API_URL = import.meta.env.MODE === 'production' ? '' : 'http://localhost:5000';
+
   // লোকাল স্টোরেজ থেকে রোল ও আইডি বের করার নিরাপদ ফাংশন
   const getCurrentUser = () => {
     try {
@@ -48,7 +51,7 @@ export const UserCreate = () => {
   const fetchUsers = async () => {
     try {
       const { role, id } = getCurrentUser();
-      const res = await fetch(`http://localhost:5000/api/admin/users?role=${role}&userId=${id}`);
+      const res = await fetch(`${API_URL}/api/admin/users?role=${role}&userId=${id}`);
       const data = await res.json();
       
       if (Array.isArray(data)) {
@@ -65,7 +68,7 @@ export const UserCreate = () => {
 
   useEffect(() => {
     fetchUsers();
-  }, []);
+  }, [API_URL]);
 
   const handleOpenModal = (user = null) => {
     const { role: latestRole } = getCurrentUser();
@@ -82,7 +85,6 @@ export const UserCreate = () => {
         password: '', 
         role: user.role || 'single',
         whatsapp: user.whatsapp || '',
-        // ইউজারের নিজস্ব রেট সেট করা, না থাকলে ফাকা রাখা
         dollarRate: user.dollarRate !== undefined && user.dollarRate !== null ? user.dollarRate : ''
       });
     } else {
@@ -115,8 +117,8 @@ export const UserCreate = () => {
 
     try {
       const url = editingUserId 
-        ? `http://localhost:5000/api/admin/users/${editingUserId}`
-        : 'http://localhost:5000/api/admin/create-user';
+        ? `${API_URL}/api/admin/users/${editingUserId}`
+        : `${API_URL}/api/admin/create-user`;
       
       const method = editingUserId ? 'PUT' : 'POST';
 
@@ -125,7 +127,6 @@ export const UserCreate = () => {
         email: formData.email,
         role: formData.role,
         whatsapp: formData.whatsapp,
-        // ইউজার ইনপুটে যা দিবে তাই সেভ হবে, হার্ডকোডেড কোনো ডিফল্ট ভ্যালু ছাড়া সরাসরি নাম্বার পাঠানো হলো
         dollarRate: formData.dollarRate !== '' ? Number(formData.dollarRate) : 0,
         creatorRole: latestRole,
         createdBy: currentUserId
@@ -175,7 +176,7 @@ export const UserCreate = () => {
 
     if (result.isConfirmed) {
       try {
-        const res = await fetch(`http://localhost:5000/api/admin/users/${userId}`, {
+        const res = await fetch(`${API_URL}/api/admin/users/${userId}`, {
           method: 'DELETE',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ creatorRole: latestRole })
@@ -293,7 +294,6 @@ export const UserCreate = () => {
                       </span>
                     </td>
 
-                    {/* টেবলে ঠিক যার যার ডেটাবেজের নিজস্ব ডলার রেট শো করবে */}
                     <td className="p-5 font-bold text-gray-700">
                       ${user.dollarRate ?? 0} BDT
                     </td>
