@@ -12,7 +12,7 @@ const PaymentCheckout = () => {
   const [paymentStatus, setPaymentStatus] = useState('pending'); // pending, completed
 
   // লোকাল এবং Vercel লাইভ সার্ভারের জন্য ডাইনামিক API বেস URL
-  const API_URL = import.meta.env.MODE === 'production' ? '' : 'http://localhost:5000';
+  const API_URL = import.meta.env.MODE === 'production' ? 'thunder-m.vercel.app' : 'http://localhost:5000';
 
   // লিঙ্ক বা প্রডাক্টের ডিটেইলস ফেচ করা
   useEffect(() => {

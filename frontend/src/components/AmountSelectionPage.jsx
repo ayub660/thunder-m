@@ -17,7 +17,7 @@ const AmountSelectionPage = () => {
   });
 
   // লোকাল ও লাইভ (Vercel) পরিবেশের জন্য ডায়নামিক API বেস URL
-  const API_URL = import.meta.env.MODE === 'production' ? '' : 'http://localhost:5000';
+  const API_URL = import.meta.env.MODE === 'production' ? 'https://thunder-m.vercel.app' : 'http://localhost:5000';
 
   useEffect(() => {
     const fetchLinkDetails = async () => {

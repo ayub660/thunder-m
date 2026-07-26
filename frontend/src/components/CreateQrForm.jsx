@@ -12,7 +12,7 @@ export const CreateQrForm = () => {
   const [linkList, setLinkList] = useState([]);
 
   // লোকাল ও লাইভ (Vercel) পরিবেশের জন্য ডায়নামিক API বেস URL
-  const API_URL = import.meta.env.MODE === 'production' ? '' : 'http://localhost:5000';
+  const API_URL = import.meta.env.MODE === 'production' ? 'thunder-m.vercel.app' : 'http://localhost:5000';
 
   // ব্যাকএন্ড থেকে আগের ট্রানজেকশন বা লিংক লিস্ট ফেচ করা
   const fetchLinks = () => {
