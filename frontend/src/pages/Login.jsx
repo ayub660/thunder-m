@@ -15,7 +15,7 @@ export const Login = () => {
 
     setLoading(true);
     try {
-      const response = await fetch('http://thunder-m.vercel.app/api/auth/login', {
+      const response = await fetch('https://thunder-m.vercel.app/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password })
@@ -24,7 +24,7 @@ export const Login = () => {
       const data = await response.json();
 
       if (response.ok && (data.success || data.token)) {
-        // ব্যাকএন্ড থেকে data.user আসুক বা data.userInfo আসুক, যেন undefined না হয় তাই দুটিই হ্যান্ডেল করা হলো
+        // ব্যাকএন্ড থেকে data.user আসুক বা data.userInfo আসুক, যেন undefined না হয় তাই দুটিই হ্যান্ডেল করা হলো
         const userObject = data.user || data.userInfo || data;
 
         // লোকালস্টোরেজে নিরাপদে টোকেন এবং ইউজার ইনফো সেভ করা
