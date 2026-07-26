@@ -25,7 +25,7 @@ export const DashboardCards = () => {
   });
 
   // লোকাল এবং Vercel লাইভ সার্ভারের জন্য ডাইনামিক API বেস URL
-  const API_URL = import.meta.env.MODE === 'production' ? 'thunder-m.vercel.app' : 'http://localhost:5000';
+  const API_URL = import.meta.env.MODE === 'production' ? 'https://thunder-m.vercel.app' : 'http://localhost:5000';
 
   useEffect(() => {
     fetchPaymentLinks();

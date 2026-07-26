@@ -407,41 +407,114 @@ app.post('/api/withdraw', async (req, res) => {
   }
 });
 
+// User Withdrawal History
+app.get('/api/my-withdrawals', async (req, res) => {
+  try {
+
+    const withdrawals = await withdrawalsCollection
+      .find({})
+      .sort({ createdAt: -1 })
+      .toArray();
+
+    res.status(200).json(withdrawals);
+
+  } catch (error) {
+
+    console.error("Fetch My Withdrawals Error:", error);
+
+    res.status(500).json({
+      success:false,
+      message:error.message
+    });
+
+  }
+});
+
+
+
+// Admin Withdrawal List
 app.get('/api/admin/withdrawals', async (req, res) => {
   try {
-    const withdrawals = await withdrawalsCollection.find({}).sort({ createdAt: -1 }).toArray();
+
+    const withdrawals = await withdrawalsCollection
+      .find({})
+      .sort({ createdAt:-1 })
+      .toArray();
+
     res.status(200).json(withdrawals);
-  } catch (error) {
+
+  } catch(error){
+
     console.error("Fetch Withdrawals Error:", error);
-    res.status(500).json({ success: false, message: error.message });
+
+    res.status(500).json({
+      success:false,
+      message:error.message
+    });
+
   }
 });
 
-app.put('/api/admin/withdrawals/:id', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { status } = req.body;
 
-    if (!ObjectId.isValid(id)) {
-      return res.status(400).json({ success: false, message: 'Invalid ID' });
+
+// Admin Update Status
+app.put('/api/admin/withdrawals/:id', async(req,res)=>{
+
+  try{
+
+    const {id}=req.params;
+    const {status}=req.body;
+
+
+    if(!ObjectId.isValid(id)){
+      return res.status(400).json({
+        success:false,
+        message:"Invalid ID"
+      });
     }
+
 
     const result = await withdrawalsCollection.updateOne(
-      { _id: new ObjectId(id) },
-      { $set: { status: status } }
+      {
+        _id:new ObjectId(id)
+      },
+      {
+        $set:{
+          status:status,
+          updatedAt:new Date()
+        }
+      }
     );
 
-    if (result.matchedCount === 0) {
-      return res.status(404).json({ success: false, message: 'Withdrawal request not found' });
+
+    if(result.matchedCount===0){
+
+      return res.status(404).json({
+        success:false,
+        message:"Withdrawal not found"
+      });
+
     }
 
-    res.status(200).json({ success: true, message: `Status updated to ${status} successfully!` });
-  } catch (error) {
-    console.error("Update Withdrawal Status Error:", error);
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
 
+    res.json({
+      success:true,
+      message:`Status updated to ${status}`
+    });
+
+
+  }catch(error){
+
+    console.error(error);
+
+    res.status(500).json({
+      success:false,
+      message:error.message
+    });
+
+  }
+
+});
 // --- 6. USER MANAGEMENT & CRUD API ---
 app.get('/api/me', async (req, res) => {
   try {
