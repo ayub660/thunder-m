@@ -24,10 +24,8 @@ export const Login = () => {
       const data = await response.json();
 
       if (response.ok && (data.success || data.token)) {
-        // ব্যাকএন্ড থেকে data.user আসুক বা data.userInfo আসুক, যেন undefined না হয় তাই দুটিই হ্যান্ডেল করা হলো
         const userObject = data.user || data.userInfo || data;
 
-        // লোকালস্টোরেজে নিরাপদে টোকেন এবং ইউজার ইনফো সেভ করা
         localStorage.setItem('token', data.token);
         localStorage.setItem('userInfo', JSON.stringify(userObject));
 
@@ -60,7 +58,8 @@ export const Login = () => {
           <p className="text-xs text-gray-400 mt-1">Please sign in to your account</p>
         </div>
 
-        <form onSubmit={handleLogin} className="space-y-5">
+        {/* ফর্ম ট্যাগটিতেও autoComplete off করে দেওয়া হলো */}
+        <form onSubmit={handleLogin} className="space-y-5" autoComplete="off">
           <div>
             <label className="block text-xs font-bold text-gray-400 uppercase mb-1">Email Address</label>
             <div className="relative">
@@ -70,6 +69,8 @@ export const Login = () => {
                 placeholder="admin@mamun.com" 
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
+                autoComplete="off"
+                name="no-autofill-email"
                 className="w-full pl-11 pr-4 py-3.5 bg-gray-50 rounded-2xl border border-gray-200 outline-none text-sm focus:border-green-500 font-medium"
                 required
               />
@@ -85,6 +86,8 @@ export const Login = () => {
                 placeholder="••••••••" 
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
+                autoComplete="new-password"
+                name="no-autofill-password"
                 className="w-full pl-11 pr-4 py-3.5 bg-gray-50 rounded-2xl border border-gray-200 outline-none text-sm focus:border-green-500 font-medium"
                 required
               />
