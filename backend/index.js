@@ -102,58 +102,6 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
-// ইনভয়েস স্ট্যাটাস চেক করার রাউট
-app.get('/i/:invoiceId/status', async (req, res) => {
-  try {
-    const { invoiceId } = req.params;
-
-    // ১. প্রথমে আপনার লোকাল ডাটাবেজে ট্রানজ্যাকশন স্ট্যাটাস চেক করতে পারেন
-    if (typeof transactionsCollection !== 'undefined' && transactionsCollection) {
-      const localTx = await transactionsCollection.findOne({ invoiceId: invoiceId });
-      if (localTx && (localTx.status === 'completed' || localTx.status === 'Paid')) {
-        return res.status(200).json({ status: 'completed' });
-      }
-    }
-
-    // ২. যদি BTCPay Server কনফিগার করা থাকে, তবে সরাসরি BTCPay থেকে রিয়েল-টাইম স্ট্যাটাস এনে চেক করতে পারেন
-    const btcpayUrl = process.env.BTCPAY_URL;
-    const storeId = process.env.BTCPAY_STORE_ID;
-    const apiKey = process.env.BTCPAY_API_KEY;
-
-    if (btcpayUrl && storeId && apiKey) {
-      const normalizedBtcpayUrl = btcpayUrl.endsWith('/') ? btcpayUrl : `${btcpayUrl}/`;
-      const endpoint = `${normalizedBtcpayUrl}api/v1/stores/${storeId}/invoices/${invoiceId}`;
-
-      const btcpayRes = await axios.get(endpoint, {
-        headers: { 'Authorization': `token ${apiKey}` }
-      });
-
-      if (btcpayRes && btcpayRes.data) {
-        const status = btcpayRes.data.status; // সাধারণত 'Settled', 'Complete', 'Paid' ইত্যাদি হতে পারে
-        
-        // স্ট্যাটাস যদি পেমেন্ট সম্পূর্ণ হওয়া বোঝায়
-        if (status === 'Settled' || status === 'Complete' || status === 'Paid') {
-          // চাইলে এখানে লোকাল ডাটাবেজ আপডেট করে নিতে পারেন
-          if (typeof transactionsCollection !== 'undefined' && transactionsCollection) {
-            await transactionsCollection.updateOne(
-              { invoiceId: invoiceId },
-              { $set: { status: 'completed' } }
-            );
-          }
-          return res.status(200).json({ status: 'completed' });
-        }
-      }
-    }
-
-    // অন্যথায় স্ট্যাটাস পেন্ডিং রিটার্ন করবে
-    return res.status(200).json({ status: 'pending' });
-
-  } catch (error) {
-    console.error("Error checking invoice status:", error.message);
-    res.status(500).json({ status: 'error', error: error.message });
-  }
-});
-// --- BTCPAY GATEWAY QR & INVOICE API (CashApp Style Dynamic Generation) ---
 // --- BTCPAY GATEWAY QR & INVOICE API (CashApp Style Dynamic Generation) ---
 app.post('/api/generate-gateway-qr', async (req, res) => {
     try {
@@ -218,7 +166,7 @@ app.post('/api/generate-gateway-qr', async (req, res) => {
         const invoiceId = invoice.id;
         let checkoutLink = invoice.checkoutLink || `${normalizedBtcpayUrl}i/${invoiceId}`;
 
-        // --- সঠিকভাবে Lightning Invoice (bolt11) বের করার আপডেট করা লজিক ---
+        // --- সঠিকভাবে Lightning Invoice (bolt11) বের করার লজিক ---
         let bolt11Invoice = "";
         try {
             const paymentMethodsRes = await axios.get(`${normalizedBtcpayUrl}api/v1/stores/${storeId}/invoices/${invoiceId}/payment-methods`, {
@@ -253,13 +201,9 @@ app.post('/api/generate-gateway-qr', async (req, res) => {
             }
         }
 
-        // যদি কোনোভাবেই লাইটনিং স্ট্রিং না পাওয়া যায়, তবে ফলব্যাক হিসেবে ইনভয়েস আইডি বসবে
         if (!bolt11Invoice) {
             bolt11Invoice = invoiceId;
-           
         }
-            
-        
 
         let qrCodeImageBase64 = "";
         try {
@@ -312,8 +256,6 @@ app.post('/api/generate-gateway-qr', async (req, res) => {
         });
     }
 });
-
-
 
 // --- 3. DASHBOARD STATS & BALANCE API ---
 app.get('/api/balance', async (req, res) => {
@@ -373,15 +315,14 @@ app.get('/api/transactions', async (req, res) => {
         res.status(500).json({ success: false, error: 'Server error' });
     }
 });
-// Webhook
 
+// --- Webhook ---
 app.post("/api/btcpay/webhook", async (req, res) => {
     try {
         const event = req.body;
         const btcpaySig = req.headers['btcpay-sig'];
         const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET;
 
-        // সিকিউরিটি সিগনেচার ভ্যালিডেশন (যদি .env এ সিক্রেট থাকে)
         if (WEBHOOK_SECRET && btcpaySig) {
             const hmac = crypto.createHmac('sha256', WEBHOOK_SECRET);
             const digest = 'sha256=' + hmac.update(JSON.stringify(req.body)).digest('hex');
@@ -395,11 +336,9 @@ app.post("/api/btcpay/webhook", async (req, res) => {
         console.log("-----------------------------------------");
         console.log("✅ BTCPay Webhook Received Event Type:", event.type);
 
-        // পেমেন্ট সফল বা সেটেল হলে ডাটাবেজ আপডেট করার লজিক
         if (event.type === 'InvoiceSettled' || event.type === 'InvoicePaymentSettled') {
             const invoiceId = event.invoiceId;
             const bolt11Invoice = event.bolt11; 
-            const amount = event.amount;
 
             console.log(`🎉 Payment Settled via Webhook! Invoice ID: ${invoiceId}`);
 
@@ -424,28 +363,6 @@ app.post("/api/btcpay/webhook", async (req, res) => {
         console.error("❌ Webhook Error Processing:", error);
         res.status(500).send('Internal Server Error');
     }
-});
-
-// --- পেমেন্ট লিংক ডিলিট করার রাউট ---
-app.delete('/api/payment-links/:id', async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    if (!ObjectId.isValid(id)) {
-      return res.status(400).json({ success: false, message: "Invalid Link ID format!" });
-    }
-
-    const result = await paymentLinksCollection.deleteOne({ _id: new ObjectId(id) });
-
-    if (result.deletedCount === 0) {
-      return res.status(404).json({ success: false, message: "Payment link not found!" });
-    }
-
-    res.status(200).json({ success: true, message: "Payment link deleted successfully!" });
-  } catch (error) {
-    console.error("Delete Payment Link Error:", error);
-    res.status(500).json({ success: false, error: "Server error while deleting payment link" });
-  }
 });
 
 // --- 5. WITHDRAWAL API ---
@@ -677,8 +594,7 @@ app.delete('/api/admin/users/:id', async (req, res) => {
   }
 });
 
-
-// --- নতুন পেমেন্ট লিংক তৈরির রাউট (Create Link) ---
+// --- পেমেন্ট লিংক তৈরির রাউট (Create Link) ---
 app.post('/api/create-payment-link', async (req, res) => {
   try {
     const { name, url, theme, amount, createdAt } = req.body;
@@ -691,7 +607,7 @@ app.post('/api/create-payment-link', async (req, res) => {
       url,
       theme: selectedTheme,
       amount,
-      image: imagePath, // ব্যাকএন্ড থেকে থিম অনুযায়ী সঠিক ইমেজ সেট করা হলো
+      image: imagePath,
       createdAt: createdAt || new Date()
     };
 
@@ -702,6 +618,7 @@ app.post('/api/create-payment-link', async (req, res) => {
     res.status(500).json({ success: false, error: "Server error" });
   }
 });
+
 // --- কার্ড আপডেট বা Save করার রাউট (Update Link & Theme) ---
 app.put('/api/payment-links/:id', async (req, res) => {
   try {
@@ -712,7 +629,6 @@ app.put('/api/payment-links/:id', async (req, res) => {
       return res.status(400).json({ success: false, message: "Invalid Link ID format!" });
     }
 
-    // ডাটাবেজে theme এবং image আপডেট করা হচ্ছে
     const result = await paymentLinksCollection.updateOne(
       { _id: new ObjectId(id) },
       { 
@@ -736,14 +652,25 @@ app.put('/api/payment-links/:id', async (req, res) => {
   }
 });
 
-// --- ডিলিট রাউট (যদি না থাকে) ---
+// --- পেমেন্ট লিংক ডিলিট করার রাউট ---
 app.delete('/api/payment-links/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    await paymentLinksCollection.deleteOne({ _id: new ObjectId(id) });
-    res.status(200).json({ success: true, message: "Deleted successfully" });
+
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).json({ success: false, message: "Invalid Link ID format!" });
+    }
+
+    const result = await paymentLinksCollection.deleteOne({ _id: new ObjectId(id) });
+
+    if (result.deletedCount === 0) {
+      return res.status(404).json({ success: false, message: "Payment link not found!" });
+    }
+
+    res.status(200).json({ success: true, message: "Payment link deleted successfully!" });
   } catch (error) {
-    res.status(500).json({ success: false, error: "Failed to delete" });
+    console.error("Delete Payment Link Error:", error);
+    res.status(500).json({ success: false, error: "Server error while deleting payment link" });
   }
 });
 
