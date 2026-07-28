@@ -220,10 +220,13 @@ app.post('/api/generate-gateway-qr', async (req, res) => {
             return res.status(500).json({ success: false, error: "Failed to generate QR Code image" });
         }
 
+        // ডাটাবেজে সেভ করার সময় lnInvoice ও payId প্রপার্টি যুক্ত করে দেওয়া হলো
         if (typeof transactionsCollection !== 'undefined' && transactionsCollection) {
             try {
                 await transactionsCollection.insertOne({
                     invoiceId: invoiceId,
+                    payId: bolt11Invoice,        // ফ্রন্টএন্ডের সুবিধার জন্য
+                    lnInvoice: bolt11Invoice,    // লাইটনিং ইনভয়েস সরাসরি যুক্ত করা হলো
                     name: `Payment for ${linkId || 'Quick Invoice'}`,
                     amount: Number(amount || 10),
                     currency: currency || 'USD',
@@ -245,7 +248,8 @@ app.post('/api/generate-gateway-qr', async (req, res) => {
             amount: amount || "10.00",
             qrCodeUrl: qrCodeImageBase64,
             bolt11: bolt11Invoice,        
-            lightningInvoice: bolt11Invoice
+            lightningInvoice: bolt11Invoice,
+            lnInvoice: bolt11Invoice
         });
 
     } catch (error) {

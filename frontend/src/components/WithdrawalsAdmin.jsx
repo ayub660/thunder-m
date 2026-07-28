@@ -139,7 +139,7 @@ export const WithdrawalsAdmin = () => {
         </div>
       </div>
 
-      {/* টেবিল সেকশন */}
+      {/* Table Section */}
       <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
@@ -168,7 +168,7 @@ export const WithdrawalsAdmin = () => {
 
                   return (
                     <tr key={item._id || item.id} className="hover:bg-gray-50/50 transition-colors">
-                      {/* ইউজার নেম ও ইমেইল */}
+                      {/* User name Nad Email */}
                       <td className="p-5">
                         <div className="font-bold text-gray-900">{item.userName || item.name || 'Unknown User'}</div>
                         <div className="text-xs text-gray-400 flex items-center gap-1 mt-0.5">
@@ -176,7 +176,7 @@ export const WithdrawalsAdmin = () => {
                         </div>
                       </td>
 
-                      {/* ডলারে অ্যামাউন্ট এবং ইউজারের রেট অনুযায়ী বিডিটি হিসাব */}
+                      {/* Dollar rate onujayi dbt hisab */}
                       <td className="p-5">
                         <div className="font-extrabold text-gray-950">${usdAmount.toFixed(2)}</div>
                         <div className="text-xs text-emerald-600 font-semibold mt-0.5">
@@ -185,7 +185,7 @@ export const WithdrawalsAdmin = () => {
                         </div>
                       </td>
 
-                      {/* পেমেন্ট বা ব্যাংক ডিটেইলস */}
+                      {/* Bank detail */}
                       <td className="p-5">
                         <div className="flex items-center gap-1.5 text-xs font-bold text-gray-800">
                           <CreditCard size={14} className="text-green-500" />
@@ -196,7 +196,7 @@ export const WithdrawalsAdmin = () => {
                         </div>
                       </td>
 
-                      {/* স্ট্যাটাস ব্যাজ */}
+                      {/* Status badge*/}
                       <td className="p-5">
                         <span className={`inline-flex px-3 py-1 rounded-xl text-[11px] font-bold uppercase tracking-wider ${
                           item.status === 'Paid' ? 'bg-green-50 text-green-600 border border-green-100' :
@@ -207,12 +207,12 @@ export const WithdrawalsAdmin = () => {
                         </span>
                       </td>
 
-                      {/* রিকোয়েস্ট টাইম */}
+                      {/* Request  Time */}
                       <td className="p-5 text-gray-400 text-xs">
                         {item.requestTime || item.createdAt ? new Date(item.requestTime || item.createdAt).toLocaleString() : 'N/A'}
                       </td>
 
-                      {/* অ্যাকশন বাটন */}
+                      {/* Action Button*/}
                       <td className="p-5 text-center">
                         <div className="flex items-center justify-center gap-2">
                           {item.status !== 'Paid' ? (

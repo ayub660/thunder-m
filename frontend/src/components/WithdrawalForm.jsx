@@ -28,7 +28,7 @@ export function WithdrawalForm({ onSuccess }) {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
 
-  // লোকাল এবং Vercel লাইভ সার্ভারের জন্য ডাইনামিক API বেস URL
+  // API base url
   const API_URL = import.meta.env.MODE === 'production' ? 'https://thunder-m.vercel.app' : 'http://localhost:5000';
 
   const fetchData = async () => {
@@ -142,13 +142,13 @@ export function WithdrawalForm({ onSuccess }) {
   return (
     <div className="w-full min-h-screen bg-[#F8F9FA] px-2 md:px-4 py-6 space-y-8 font-sans text-gray-900">
       
-      {/* পেজ হেডার */}
+      {/* PAge hearder */}
       <div className="w-full">
         <h1 className="text-3xl font-extrabold tracking-tight text-gray-900">Withdrawals</h1>
         <p className="text-sm text-gray-500 mt-1">Manage withdrawal requests</p>
       </div>
 
-      {/* ব্যালেন্স কার্ড সেকশন */}
+      {/* Balance card section*/}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full">
         
         {/* Available Balance Card */}
@@ -188,7 +188,7 @@ export function WithdrawalForm({ onSuccess }) {
         </div>
       </div>
 
-      {/* সার্চ এবং ফিল্টার বার */}
+      
       <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm flex flex-wrap items-end gap-4 w-full">
         <div className="flex-1 min-w-[200px] space-y-1.5">
           <label className="text-[11px] font-bold uppercase tracking-wider text-gray-400">Search</label>
@@ -248,7 +248,7 @@ export function WithdrawalForm({ onSuccess }) {
         </div>
       </div>
 
-      {/* পেআউট হিস্ট্রি টেবিল সেকশন */}
+     
       <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm w-full">
         <h3 className="text-xl font-bold mb-6 text-gray-900">Payout History</h3>
         
@@ -315,7 +315,7 @@ export function WithdrawalForm({ onSuccess }) {
         </div>
       </div>
 
-      {/* উইথড্র রিকোয়েস্ট মোডাল */}
+      
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm w-full h-full">
           <div className="bg-white rounded-3xl w-full max-w-lg p-8 shadow-2xl space-y-6 relative">

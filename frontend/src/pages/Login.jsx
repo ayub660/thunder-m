@@ -66,7 +66,7 @@ export const Login = () => {
               <Mail className="absolute left-4 top-3.5 text-gray-400" size={18} />
               <input 
                 type="email" 
-                placeholder="admin@mamun.com" 
+                placeholder="Enter Your Email" 
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 autoComplete="off"

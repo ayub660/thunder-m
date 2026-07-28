@@ -15,7 +15,7 @@ const PaymentCheckout = () => {
   const [error, setError] = useState('');
   const [paymentStatus, setPaymentStatus] = useState('pending');
 
-  // লোকাল এবং Vercel লাইভ সার্ভারের জন্য ডাইনামিক API বেস URL
+  //  API Base URL
   const API_URL = import.meta.env.MODE === 'production' ? 'https://thunder-m.vercel.app' : 'http://localhost:5000';
 
   useEffect(() => {
@@ -111,7 +111,7 @@ const PaymentCheckout = () => {
                   className="w-full h-full object-contain" 
                   style={{ 
                     imageRendering: 'crisp-edges',
-                    transform: 'scale(1.05)' // কিউআর কোডের ডটগুলো ছোট ও কম্প্যাক্ট দেখানোর জন্য স্কেল অ্যাডজাস্ট করা হয়েছে
+                    transform: 'scale(1.05)' 
                   }}
                 />
               ) : (
@@ -120,7 +120,7 @@ const PaymentCheckout = () => {
                 </div>
               )}
 
-              {/* Center CashApp Logo Inside QR - আরও স্পষ্ট এবং সুন্দর করা হয়েছে */}
+              {/* Center CashApp Logo Inside QR - */}
               {!loading && paymentData?.qrCodeUrl && (
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                   <div className="bg-[#00D54B] w-[72px] h-[72px] rounded-[20px] shadow-lg border-[4px] border-white flex items-center justify-center">

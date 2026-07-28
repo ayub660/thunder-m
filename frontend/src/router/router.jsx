@@ -1,13 +1,11 @@
-import { createBrowserRouter } from "react-router-dom";
+import { createBrowserRouter, Navigate } from "react-router-dom";
 import App from "../App";
-
-// Components
 import { DashboardCards } from "../components/DashboardCards";
 import { NotFound } from "../components/NotFound";
 import { CreateQrForm } from "../components/CreateQrForm";
 import { UserCreate } from "../components/UserCreate";
 import PaymentCheckout from "../components/PaymentCheckout";
-import AmountSelectionPage from "../components/AmountSelectionPage"; // নতুন অ্যামাউন্ট পেজ ইমপোর্ট
+import AmountSelectionPage from "../components/AmountSelectionPage";
 import { WithdrawalForm } from "../components/WithdrawalForm";
 import { Profile } from "../components/Profile";
 import { TransactionsPage } from "../components/TransactionsPage";
@@ -16,6 +14,18 @@ import { WithdrawalsAdmin } from "../components/WithdrawalsAdmin";
 // Pages
 import { Login } from "../pages/Login";
 import React, { useState, useEffect } from 'react';
+
+// প্রোটেক্টেড রুট র‍্যাপার: টোকেন না থাকলে সরাসরি লগইন পেজে পাঠাবে
+const ProtectedRoute = ({ children }) => {
+  const token = localStorage.getItem('token');
+  const userInfo = localStorage.getItem('userInfo');
+
+  if (!token || !userInfo) {
+    return <Navigate to="/login" replace />;
+  }
+
+  return children;
+};
 
 // প্রোটেক্টেড উইথড্র পেজ রুট র‍্যাপার (শুধুমাত্র লজিক হ্যান্ডেল করবে)
 const WithdrawalsWrapper = () => {
@@ -42,7 +52,7 @@ const WithdrawalsWrapper = () => {
     return <div className="p-8 text-center text-gray-500 font-medium">Loading...</div>;
   }
 
-  // রোল অনুযায়ী শুধু সংশ্লিষ্ট কম্পোনেন্ট রিটার্ন করবে
+  
   return isAdmin ? <WithdrawalsAdmin /> : <WithdrawalForm />;
 };
 
@@ -53,7 +63,11 @@ export const router = createBrowserRouter([
   },
   {
     path: "/",
-    element: <App />,
+    element: (
+      <ProtectedRoute>
+        <App />
+      </ProtectedRoute>
+    ),
     children: [
       {
         index: true,
@@ -90,12 +104,12 @@ export const router = createBrowserRouter([
     ],
   },
   {
-    // প্রথম পেজ: যেখানে ইউজার অ্যামাউন্ট সিলেক্ট করবে (যেমন: /fxzcv)
+    
     path: "/:linkId",
     element: <AmountSelectionPage />,
   },
   {
-    // দ্বিতীয় পেজ: যেখানে ইউনিক ইনভয়েস আইডি সহ QR এবং পেমেন্ট হবে (যেমন: /fxzcv/i/09480982-...)
+    
     path: "/:linkId/i/:invoiceId",
     element: <PaymentCheckout />,
   },

@@ -11,10 +11,10 @@ const PaymentCheckout = () => {
   const [error, setError] = useState('');
   const [paymentStatus, setPaymentStatus] = useState('pending'); // pending, completed
 
-  // লোকাল এবং Vercel লাইভ সার্ভারের জন্য ডাইনামিক API বেস URL
+  //  API Base URL
   const API_URL = import.meta.env.MODE === 'production' ? 'https://thunder-m.vercel.app' : 'http://localhost:5000';
 
-  // লিঙ্ক বা প্রডাক্টের ডিটেইলস ফেচ করা
+ 
   useEffect(() => {
     const fetchLinkDetails = async () => {
       try {
@@ -28,7 +28,7 @@ const PaymentCheckout = () => {
     fetchLinkDetails();
   }, [linkId, API_URL]);
 
-  // ইনভয়েস তৈরি করার হ্যান্ডলার
+  // Invoice create handler
   const handleGenerateInvoice = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -55,7 +55,7 @@ const PaymentCheckout = () => {
     }
   };
 
-  // পেমেন্ট স্ট্যাটাস চেক করার জন্য রিয়েল-টাইম পোলিং
+  // PAyment status check realtime
   useEffect(() => {
     let interval;
     if (paymentData && paymentData.invoiceId && paymentStatus === 'pending') {

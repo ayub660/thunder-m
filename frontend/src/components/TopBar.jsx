@@ -5,11 +5,11 @@ import { Bell, Search } from "lucide-react";
 export function TopBar({ title }) {
   const [user, setUser] = useState(null);
 
-  // লোকাল এবং Vercel লাইভ সার্ভারের জন্য ডাইনামিক API বেস URL
+  // API Base URL
   const API_URL = import.meta.env.MODE === 'production' ? 'https://thunder-m.vercel.app' : 'http://localhost:5000';
 
   useEffect(() => {
-    // ব্যাকএন্ড থেকে বর্তমান ইউজার ডাটা আনা
+
     const fetchUser = async () => {
       try {
         const res = await axios.get(`${API_URL}/api/me`);
