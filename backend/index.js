@@ -18,7 +18,7 @@ app.use(cors());
 const PORT = process.env.PORT || 5000;
 const DB_URI = process.env.DB_URI;
 
-// MongoDB কানেকশন সেটআপ
+// MongoDB 
 const client = new MongoClient(DB_URI);
 let db, paymentLinksCollection, usersCollection, withdrawalsCollection, transactionsCollection;
 
@@ -32,7 +32,7 @@ async function connectDB() {
     transactionsCollection = db.collection('transactions');
     console.log("MongoDB Native Connected Successfully");
 
-    // মাস্টার অ্যাডমিন স্বয়ংক্রিয়ভাবে তৈরি করা (Master Admin Seed)
+    //  (Master Admin Seed)
     const masterEmail = "admin@mamun.com";
     const adminExists = await usersCollection.findOne({ email: masterEmail });
     
@@ -111,9 +111,13 @@ app.post('/api/generate-gateway-qr', async (req, res) => {
         const storeId = process.env.BTCPAY_STORE_ID;
         const apiKey = process.env.BTCPAY_API_KEY;
 
+        // আপনার ফন্টএন্ড ডোমেইন এখানে সেট করা হলো
+        const frontendDomain = process.env.FRONTEND_URL || "https://casha-app-pay.netlify.app";
+
         // যদি BTCPay কনফিগার করা না থাকে, তবে ফলব্যাক QR তৈরি করবে
         if (!btcpayUrl || !storeId || !apiKey) {
-            const fallbackLink = `https://pay.example.com/checkout?amount=${amount || '10.00'}&order=${orderId || 'ORDER-' + Date.now()}`;
+            const currentOrderId = orderId || 'ORDER-' + Date.now();
+            const fallbackLink = `${frontendDomain}/ava?amount=${amount || '10.00'}&order=${currentOrderId}`;
             const qrCodeImageBase64 = await QRCode.toDataURL(fallbackLink);
             
             return res.status(200).json({
@@ -164,9 +168,11 @@ app.post('/api/generate-gateway-qr', async (req, res) => {
 
         const invoice = btcpayResponse.data;
         const invoiceId = invoice.id;
-        let checkoutLink = invoice.checkoutLink || `${normalizedBtcpayUrl}i/${invoiceId}`;
+        
+        // --- এKahne  BTCPay er link er poriborte frontend link generate hobe ---
+        let checkoutLink = `${frontendDomain}/ava?invoiceId=${invoiceId}&amount=${amount || "10.00"}`;
 
-        // --- সঠিকভাবে Lightning Invoice (bolt11) বের করার লজিক ---
+        // ---  Lightning Invoice (bolt11) Ber korar logic ---
         let bolt11Invoice = "";
         try {
             const paymentMethodsRes = await axios.get(`${normalizedBtcpayUrl}api/v1/stores/${storeId}/invoices/${invoiceId}/payment-methods`, {
@@ -220,13 +226,13 @@ app.post('/api/generate-gateway-qr', async (req, res) => {
             return res.status(500).json({ success: false, error: "Failed to generate QR Code image" });
         }
 
-        // ডাটাবেজে সেভ করার সময় lnInvoice ও payId প্রপার্টি যুক্ত করে দেওয়া হলো
+        // ডাটাবেজে সেভ করার সময় lnInvoice ও payId প্রপার্টি যুক্ত করে দেওয়া হলো
         if (typeof transactionsCollection !== 'undefined' && transactionsCollection) {
             try {
                 await transactionsCollection.insertOne({
                     invoiceId: invoiceId,
-                    payId: bolt11Invoice,        // ফ্রন্টএন্ডের সুবিধার জন্য
-                    lnInvoice: bolt11Invoice,    // লাইটনিং ইনভয়েস সরাসরি যুক্ত করা হলো
+                    payId: bolt11Invoice,       
+                    lnInvoice: bolt11Invoice,    
                     name: `Payment for ${linkId || 'Quick Invoice'}`,
                     amount: Number(amount || 10),
                     currency: currency || 'USD',
@@ -309,7 +315,26 @@ app.get('/api/balance', async (req, res) => {
 // --- 4. TRANSACTIONS API ---
 app.get('/api/transactions', async (req, res) => {
     try {
-        const transactions = await transactionsCollection.find({}).sort({ createdAt: -1 }).toArray(); 
+        const { userEmail, role } = req.query;
+
+        let query = {};
+        
+        // ইউজার যদি এডমিন বা মাস্টার না হয়, তবে শুধু তার নিজের ইমেইলের ট্রানজেকশন ফিল্টার হবে
+        if (role !== 'master' && role !== 'admin') {
+            if (!userEmail) {
+                return res.status(400).json({ success: false, error: "User email is required for regular users." });
+            }
+            query = { 
+                $or: [
+                    { userEmail: userEmail },
+                    { email: userEmail }
+                ] 
+            };
+        }
+
+        // কুয়েরি অনুযায়ী ট্রানজেকশন ফেচ করা (ফিল্টার ছাড়া হলে query খালি {} থাকবে এবং সব আসবে)
+        const transactions = await transactionsCollection.find(query).sort({ createdAt: -1 }).toArray(); 
+        
         res.json({
             success: true,
             transactions: transactions
@@ -729,48 +754,54 @@ app.put('/api/payment-links/:id', async (req, res) => {
   }
 });
 
-// --- পেমেন্ট লিংক ডিলিট করার রাউট ---
+// --- Payment link Crud delete matro master admin parbe  ---
 app.delete('/api/payment-links/:id', async (req, res) => {
-  try {
-    const { id } = req.params;
+    try {
+        const linkId = req.params.id;
+        const { role, email } = req.body; // ফ্রন্টএন্ড থেকে পাঠানো রোল বা ইমেইল রিসিভ করা
 
-    if (!ObjectId.isValid(id)) {
-      return res.status(400).json({ success: false, message: "Invalid Link ID format!" });
+        // মাস্টার এডমিন বা নির্দিষ্ট ইমেইল চেক করা (admin@mamun.com হলে পাস করবে)
+        const isMaster = role === 'master' || role === 'admin' || email === 'admin@mamun.com';
+
+        if (!isMaster) {
+            return res.status(403).json({ 
+                success: false, 
+                error: "Access Denied! Only Master Admin can delete payment links." 
+            });
+        }
+
+        const result = await paymentLinksCollection.deleteOne({ _id: new ObjectId(linkId) });
+
+        if (result.deletedCount === 0) {
+            return res.status(404).json({ success: false, error: "Payment link not found" });
+        }
+
+        res.status(200).json({ success: true, message: "Payment link deleted successfully by Master Admin." });
+
+    } catch (error) {
+        console.error("Delete Link Error:", error.message);
+        res.status(500).json({ success: false, error: "Internal Server Error" });
     }
-
-    const result = await paymentLinksCollection.deleteOne({ _id: new ObjectId(id) });
-
-    if (result.deletedCount === 0) {
-      return res.status(404).json({ success: false, message: "Payment link not found!" });
-    }
-
-    res.status(200).json({ success: true, message: "Payment link deleted successfully!" });
-  } catch (error) {
-    console.error("Delete Payment Link Error:", error);
-    res.status(500).json({ success: false, error: "Server error while deleting payment link" });
-  }
 });
 
 // --- নির্দিষ্ট পেমেন্ট লিংকের ডিটেইলস আনার রাউট ---
-app.get('/api/payment-links/:name', async (req, res) => {
-  try {
-    const { name } = req.params;
-    
-    let link = await paymentLinksCollection.findOne({ name: name });
+app.get('/api/payment-links', async (req, res) => {
+    try {
+        const { userEmail, role } = req.query;
 
-    if (!link && ObjectId.isValid(name)) {
-      link = await paymentLinksCollection.findOne({ _id: new ObjectId(name) });
+        let query = {};
+        
+        if (role !== 'master' && role !== 'admin') {
+            query = { userEmail: userEmail }; 
+        }
+
+        const links = await paymentLinksCollection.find(query).toArray();
+        res.status(200).json({ success: true, links });
+
+    } catch (error) {
+        console.error("Error fetching links:", error.message);
+        res.status(500).json({ success: false, error: "Failed to fetch payment links" });
     }
-
-    if (!link) {
-      return res.status(404).json({ success: false, message: "Payment link not found" });
-    }
-
-    res.status(200).json(link);
-  } catch (error) {
-    console.error("Error fetching single payment link:", error);
-    res.status(500).json({ success: false, error: "Server error while fetching link" });
-  }
 });
 
 // --- PAYMENT STATUS CHECK API ---

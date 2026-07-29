@@ -21,13 +21,26 @@ export function TransactionsPage() {
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
 
-  //base বেস URL
+  // base URL
   const API_URL = import.meta.env.MODE === 'production' ? 'https://thunder-m.vercel.app' : 'http://localhost:5000';
 
-  // ব্যাকএন্ড থেকে রিয়েল ডাটা ফেচ করা
+  // ব্যাকএন্ড থেকে ডাইনামিক রোল ও ইমেইল সহ রিয়েল ডাটা ফেচ করা
   const fetchTransactions = () => {
     setLoading(true);
-    fetch(`${API_URL}/api/transactions`)
+
+    // লোকালস্টোরেজের বিভিন্ন সম্ভাব্য কি (Key) থেকে ইউজার ডাটা খোঁজা
+    const storedUser = JSON.parse(
+      localStorage.getItem('user') || 
+      localStorage.getItem('userInfo') || 
+      localStorage.getItem('admin') || 
+      localStorage.getItem('merchant')
+    ) || {};
+
+    const userEmail = storedUser.email || localStorage.getItem('userEmail') || '';
+    const role = storedUser.role || storedUser.isAdmin || localStorage.getItem('role') || 'master';
+
+    // URL-এ userEmail এবং role প্যারামিটার পাঠানো
+    fetch(`${API_URL}/api/transactions?userEmail=${encodeURIComponent(userEmail)}&role=${encodeURIComponent(role)}`)
       .then(res => res.json())
       .then(data => {
         if (data.success && Array.isArray(data.transactions)) {
@@ -72,7 +85,14 @@ export function TransactionsPage() {
       (t.invoiceId || t.payId || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
       (t.description || t.orderId || "").toLowerCase().includes(searchTerm.toLowerCase());
 
-    const matchesStatus = statusFilter === 'All' || t.status === statusFilter;
+    let matchesStatus = true;
+    if (statusFilter !== 'All') {
+      if (statusFilter === 'Paid') {
+        matchesStatus = t.status === 'Paid' || t.status === 'Success' || t.status === 'Completed';
+      } else {
+        matchesStatus = t.status === statusFilter;
+      }
+    }
 
     const tDate = new Date(t.date || t.createdAt);
     const matchesFrom = fromDate ? tDate >= new Date(fromDate) : true;
@@ -104,7 +124,7 @@ export function TransactionsPage() {
         </button>
       </div>
 
-      {/* --- ১.Dynamic status card --- */}
+      {/* --- ১. Dynamic status card --- */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
         <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm flex flex-col justify-between">
           <span className="text-[11px] font-bold uppercase tracking-wider text-gray-400">Total Transactions</span>
@@ -135,7 +155,7 @@ export function TransactionsPage() {
         </div>
       </div>
 
-      {/* --- 2 Filter search kora --- */}
+      {/* --- 2. Filter search kora --- */}
       <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm mb-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 items-center">
         <div className="relative">
           <label className="block text-[11px] font-bold uppercase tracking-wider text-gray-400 mb-1">Search</label>
@@ -200,7 +220,7 @@ export function TransactionsPage() {
         </div>
       </div>
 
-      {/* --- 3 transaction list table --- */}
+      {/* --- 3. transaction list table --- */}
       <TransactionList items={filteredTransactions} loading={loading} />
     </div>
   );

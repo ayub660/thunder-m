@@ -11,12 +11,24 @@ export const CreateQrForm = () => {
   const [loading, setLoading] = useState(false);
   const [linkList, setLinkList] = useState([]);
 
-  // লোকাল ও লাইভ (Vercel) পরিবেশের জন্য ডায়নামিক API বেস URL
+  // লোকাল ও লাইভ (Vercel) পরিবেশের জন্য ডায়নামিক API বেস URL
   const API_URL = import.meta.env.MODE === 'production' ? 'https://thunder-m.vercel.app' : 'http://localhost:5000';
 
-  // ব্যাকএন্ড থেকে আগের ট্রানজেকশন বা লিংক লিস্ট ফেচ করা
+  // ব্যাকএন্ড থেকে ডাইনামিক রোল ও ইমেইল সহ আগের ট্রানজেকশন বা লিংক লিস্ট ফেচ করা
   const fetchLinks = () => {
-    fetch(`${API_URL}/api/transactions`)
+    // লোকালস্টোরেজ থেকে ইউজারের তথ্য রিড করা
+    const storedUser = JSON.parse(
+      localStorage.getItem('user') || 
+      localStorage.getItem('userInfo') || 
+      localStorage.getItem('admin') || 
+      localStorage.getItem('merchant')
+    ) || {};
+
+    const userEmail = storedUser.email || localStorage.getItem('userEmail') || '';
+    const role = storedUser.role || storedUser.isAdmin || localStorage.getItem('role') || 'master';
+
+    // ইমেইল এবং রোল কুয়েরি প্যারামিটার হিসেবে পাঠানো
+    fetch(`${API_URL}/api/transactions?userEmail=${encodeURIComponent(userEmail)}&role=${encodeURIComponent(role)}`)
       .then(res => res.json())
       .then(data => {
         const items = data.success ? data.transactions : (Array.isArray(data) ? data : []);
@@ -70,6 +82,15 @@ export const CreateQrForm = () => {
       return;
     }
     
+    // বর্তমান লগইন করা ইউজারের ইমেইল বের করা ব্যাকএন্ডে পাঠানোর জন্য
+    const storedUser = JSON.parse(
+      localStorage.getItem('user') || 
+      localStorage.getItem('userInfo') || 
+      localStorage.getItem('admin') || 
+      localStorage.getItem('merchant')
+    ) || {};
+    const currentUserEmail = storedUser.email || localStorage.getItem('userEmail') || 'admin@mamun.com';
+
     setLoading(true);
     try {
       const response = await fetch(`${API_URL}/api/generate-gateway-qr`, {
@@ -82,7 +103,7 @@ export const CreateQrForm = () => {
           currency: 'USD',
           orderId: 'ORDER-' + Date.now(),
           buyerEmail: 'customer@example.com',
-          userEmail: 'admin@mamun.com'
+          userEmail: currentUserEmail // ডাইনামিক ইউজার ইমেইল পাস করা হলো
         })
       });
 

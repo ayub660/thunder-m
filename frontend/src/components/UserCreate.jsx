@@ -47,7 +47,7 @@ export const UserCreate = () => {
     dollarRate: ''
   });
 
-  // ব্যাকএন্ড থেকে ইউজার ফেচ করার ফাংশন
+
   const fetchUsers = async () => {
     try {
       const { role, id } = getCurrentUser();

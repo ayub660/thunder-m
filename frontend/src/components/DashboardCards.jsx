@@ -12,7 +12,7 @@ export const DashboardCards = () => {
   const [linkIdInput, setLinkIdInput] = useState("");
   const [amount, setAmount] = useState("10");
 
-  // ডাইনামিক্যালি বর্তমান ডোমেইন (लोকালহোস্ট বা ভেরসেল লাইভ লিংক) সেট করা হলো
+ 
   const [selectedDomain, setSelectedDomain] = useState(window.location.origin);
   const [newLinkTheme, setNewLinkTheme] = useState('light');
 
@@ -65,7 +65,7 @@ export const DashboardCards = () => {
     }
   };
 
-  // নির্দিষ্ট কার্ডের থিম লোকাল স্টেটে পরিবর্তন করার হ্যান্ডলার
+  
   const handleCardThemeChange = (id, newTheme) => {
     setPaymentLinks(prevLinks => 
       prevLinks.map(link => {
@@ -77,7 +77,7 @@ export const DashboardCards = () => {
     );
   };
 
-  // নতুন পেমেন্ট লিংক তৈরি করার ফাংশন (SweetAlert সহ)
+ 
   const handleCreateLink = async () => {
     if (!linkIdInput.trim()) {
       Swal.fire({
@@ -129,7 +129,7 @@ export const DashboardCards = () => {
     }
   };
 
-  // লিংক ডিলিট করার ফাংশন (SweetAlert Confirm সহ)
+  
   const handleDeleteLink = async (id) => {
     Swal.fire({
       title: 'Are you sure?',
@@ -161,7 +161,6 @@ export const DashboardCards = () => {
     });
   };
 
-  // ডাটাবেজে কার্ডের থিম ও সেটিংস সেভ করার ফাংশন
   const handleSaveCardSettings = async (link) => {
     try {
       await axios.put(`${API_URL}/api/payment-links/${link._id}`, {
@@ -216,8 +215,8 @@ export const DashboardCards = () => {
               className="px-4 py-2 bg-gray-50 border border-green-500 rounded-xl text-sm font-medium text-gray-700 outline-none focus:ring-2 focus:ring-green-100 cursor-pointer shadow-sm"
             >
               <option value={window.location.origin}>{window.location.origin}</option>
-              <option value="https://www.payecash.app">https://www.payecash.app</option>
-              <option value="https://www.payin-cash.app">https://www.payin-cash.app</option>
+              <option value="https://www.payecash.app">https://www.2nddomain.app</option>
+              <option value="https://www.payin-cash.app">https://www.3rddomain.app</option>
             </select>
           </div>
 
