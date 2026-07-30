@@ -2,6 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const { MongoClient, ObjectId } = require('mongodb');
 const cors = require('cors');
+
 const QRCode = require('qrcode');
 const dns = require('dns');
 const axios = require('axios');
@@ -32,7 +33,7 @@ async function connectDB() {
     transactionsCollection = db.collection('transactions');
     console.log("MongoDB Native Connected Successfully");
 
-    //  (Master Admin Seed)
+    // (Master Admin Seed)
     const masterEmail = "admin@mamun.com";
     const adminExists = await usersCollection.findOne({ email: masterEmail });
     
@@ -55,12 +56,28 @@ async function connectDB() {
   }
 }
 
-// --- 1. PAYMENT LINKS & CHECKOUT API ---
+// --- 1. PAYMENT LINKS & CHECKOUT API (Unified & Filtered) ---
 app.get('/api/payment-links', async (req, res) => {
   try {
-    const links = await paymentLinksCollection.find().sort({ createdAt: -1 }).toArray();
+    const { email, role } = req.query;
+    let query = {};
+    
+    const isMasterAdmin = (
+      role === 'master' || 
+      role === 'master_admin' || 
+      role === 'admin' || 
+      email === 'admin@mamun.com'
+    );
+
+    // যদি মাস্টার অ্যাডমিন না হয়, তবে শুধু তার নিজের ইমেইলের লিংকগুলো দেখাবে
+    if (!isMasterAdmin && email) {
+      query = { userEmail: email };
+    }
+
+    const links = await paymentLinksCollection.find(query).toArray();
     res.json(links);
   } catch (error) {
+    console.error("Error fetching payment links:", error);
     res.status(500).json({ error: "Failed to fetch payment links" });
   }
 });
@@ -105,13 +122,13 @@ app.post('/api/auth/login', async (req, res) => {
 // --- BTCPAY GATEWAY QR & INVOICE API (CashApp Style Dynamic Generation) ---
 app.post('/api/generate-gateway-qr', async (req, res) => {
     try {
-        const { linkId, amount, buyerEmail, userEmail, currency, orderId } = req.body;
+        const { linkId, amount, buyerEmail, userEmail, userId, currency, orderId } = req.body;
 
         const btcpayUrl = process.env.BTCPAY_URL;
         const storeId = process.env.BTCPAY_STORE_ID;
         const apiKey = process.env.BTCPAY_API_KEY;
 
-        // আপনার ফন্টএন্ড ডোমেইন এখানে সেট করা হলো
+        // আপনার ফ্রন্টএন্ড ডোমেইন এখানে সেট করা হলো
         const frontendDomain = process.env.FRONTEND_URL || "https://casha-app-pay.netlify.app";
 
         // যদি BTCPay কনফিগার করা না থাকে, তবে ফলব্যাক QR তৈরি করবে
@@ -119,6 +136,28 @@ app.post('/api/generate-gateway-qr', async (req, res) => {
             const currentOrderId = orderId || 'ORDER-' + Date.now();
             const fallbackLink = `${frontendDomain}/ava?amount=${amount || '10.00'}&order=${currentOrderId}`;
             const qrCodeImageBase64 = await QRCode.toDataURL(fallbackLink);
+            
+            // ফলব্যাক মোডেও সঠিক userEmail ও userId সেভ করা হলো
+            if (typeof transactionsCollection !== 'undefined' && transactionsCollection) {
+                try {
+                    await transactionsCollection.insertOne({
+                        invoiceId: 'FALLBACK-' + Date.now(),
+                        payId: fallbackLink,
+                        lnInvoice: fallbackLink,
+                        name: `Payment for ${linkId || 'Quick Invoice'}`,
+                        amount: Number(amount || 10),
+                        currency: currency || 'USD',
+                        status: "Pending",
+                        checkoutLink: fallbackLink,
+                        bolt11: fallbackLink,
+                        userEmail: userEmail || null,
+                        userId: userId && ObjectId.isValid(userId) ? new ObjectId(userId) : null,
+                        createdAt: new Date()
+                    });
+                } catch (dbErr) {
+                    console.error("Fallback DB Insert Error:", dbErr.message);
+                }
+            }
             
             return res.status(200).json({
                 success: true,
@@ -169,10 +208,10 @@ app.post('/api/generate-gateway-qr', async (req, res) => {
         const invoice = btcpayResponse.data;
         const invoiceId = invoice.id;
         
-        // --- এKahne  BTCPay er link er poriborte frontend link generate hobe ---
+        // --- BTCPay er link er poriborte frontend link generate hobe ---
         let checkoutLink = `${frontendDomain}/ava?invoiceId=${invoiceId}&amount=${amount || "10.00"}`;
 
-        // ---  Lightning Invoice (bolt11) Ber korar logic ---
+        // --- Lightning Invoice (bolt11) Ber korar logic ---
         let bolt11Invoice = "";
         try {
             const paymentMethodsRes = await axios.get(`${normalizedBtcpayUrl}api/v1/stores/${storeId}/invoices/${invoiceId}/payment-methods`, {
@@ -226,12 +265,12 @@ app.post('/api/generate-gateway-qr', async (req, res) => {
             return res.status(500).json({ success: false, error: "Failed to generate QR Code image" });
         }
 
-        // ডাটাবেজে সেভ করার সময় lnInvoice ও payId প্রপার্টি যুক্ত করে দেওয়া হলো
+        // ডাটাবেজে সেভ করার সময় সঠিক userEmail এবং userId সংরক্ষণ করা হলো
         if (typeof transactionsCollection !== 'undefined' && transactionsCollection) {
             try {
                 await transactionsCollection.insertOne({
                     invoiceId: invoiceId,
-                    payId: bolt11Invoice,       
+                    payId: bolt11Invoice,      
                     lnInvoice: bolt11Invoice,    
                     name: `Payment for ${linkId || 'Quick Invoice'}`,
                     amount: Number(amount || 10),
@@ -239,7 +278,8 @@ app.post('/api/generate-gateway-qr', async (req, res) => {
                     status: "Pending",
                     checkoutLink: checkoutLink,
                     bolt11: bolt11Invoice,
-                    userEmail: userEmail || "admin@mamun.com",
+                    userEmail: userEmail || null,
+                    userId: userId && ObjectId.isValid(userId) ? new ObjectId(userId) : null,
                     createdAt: new Date()
                 });
             } catch (dbErr) {
@@ -268,12 +308,22 @@ app.post('/api/generate-gateway-qr', async (req, res) => {
 });
 
 // --- 3. DASHBOARD STATS & BALANCE API ---
+
+
+
 app.get('/api/balance', async (req, res) => {
   try {
     const { email, role } = req.query;
 
     let query = {};
-    if (role === 'single' && email) {
+    const isMasterAdmin = (
+      role === 'master' || 
+      role === 'master_admin' || 
+      role === 'admin' || 
+      email === 'admin@mamun.com'
+    );
+
+    if (!isMasterAdmin && email) {
       query = { userEmail: email };
     }
 
@@ -282,7 +332,8 @@ app.get('/api/balance', async (req, res) => {
 
     let totalEarnings = 0;
     transactions.forEach(t => {
-      if (t.status === "Paid" || t.status === "Success" || t.status === "Settled") {
+      const status = (t.status || "").toLowerCase();
+      if (status === "paid" || status === "success" || status === "settled") {
         totalEarnings += Number(t.amount || 0);
       }
     });
@@ -293,10 +344,6 @@ app.get('/api/balance', async (req, res) => {
     });
 
     let currentBalance = totalEarnings - totalWithdrawn;
-    if (role === 'master_admin' && totalEarnings === 0) {
-      currentBalance = 1250;
-      totalEarnings = 1250;
-    }
 
     res.json({
       balance: currentBalance,
@@ -311,28 +358,39 @@ app.get('/api/balance', async (req, res) => {
     res.status(500).json({ error: "Failed to fetch balance stats" });
   }
 });
-
 // --- 4. TRANSACTIONS API ---
 app.get('/api/transactions', async (req, res) => {
     try {
-        const { userEmail, role } = req.query;
+        const { userEmail, role, userId } = req.query;
 
         let query = {};
-        
-        // ইউজার যদি এডমিন বা মাস্টার না হয়, তবে শুধু তার নিজের ইমেইলের ট্রানজেকশন ফিল্টার হবে
-        if (role !== 'master' && role !== 'admin') {
-            if (!userEmail) {
-                return res.status(400).json({ success: false, error: "User email is required for regular users." });
+        const isMasterAdmin = (role === 'master' || role === 'master_admin' || role === 'admin' || userEmail === 'admin@mamun.com');
+
+        if (!isMasterAdmin) {
+            let conditions = [];
+
+            // ১. ইমেলের জন্য কন্ডিশন
+            if (userEmail) {
+                conditions.push({ userEmail: userEmail });
+                conditions.push({ email: userEmail });
             }
-            query = { 
-                $or: [
-                    { userEmail: userEmail },
-                    { email: userEmail }
-                ] 
-            };
+
+            // ২. userId স্ট্রিং এবং ObjectId উভয়ভাবেই চেক করা (যাতে ডাটা টাইপ মিসম্যাচ না করে)
+            if (userId) {
+                conditions.push({ userId: userId }); // স্ট্রিং হিসেবে চেক
+                if (ObjectId.isValid(userId)) {
+                    conditions.push({ userId: new ObjectId(userId) }); // ObjectId হিসেবে চেক
+                }
+            }
+
+            if (conditions.length > 0) {
+                query = { $or: conditions };
+            } else {
+                return res.status(400).json({ success: false, error: "User email or ID is required." });
+            }
         }
 
-        // কুয়েরি অনুযায়ী ট্রানজেকশন ফেচ করা (ফিল্টার ছাড়া হলে query খালি {} থাকবে এবং সব আসবে)
+        // ডাটাবেজ থেকে কুয়েরি রান করা
         const transactions = await transactionsCollection.find(query).sort({ createdAt: -1 }).toArray(); 
         
         res.json({
@@ -342,7 +400,7 @@ app.get('/api/transactions', async (req, res) => {
     } catch (error) {
         console.error('Error fetching transactions:', error);
         res.status(500).json({ success: false, error: 'Server error' });
-    }
+    } 
 });
 
 // --- Webhook ---
@@ -439,7 +497,33 @@ app.post('/api/withdraw', async (req, res) => {
 // User Withdrawal History
 app.get('/api/my-withdrawals', async (req, res) => {
   try {
+    const { userEmail, role } = req.query;
+    let query = {};
+    const isMasterAdmin = (role === 'master' || role === 'master_admin' || role === 'admin' || userEmail === 'admin@mamun.com');
 
+    if (!isMasterAdmin && userEmail) {
+      query = { userEmail: userEmail };
+    }
+
+    const withdrawals = await withdrawalsCollection
+      .find(query)
+      .sort({ createdAt: -1 })
+      .toArray();
+
+    res.status(200).json(withdrawals);
+
+  } catch (error) {
+    console.error("Fetch My Withdrawals Error:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+});
+
+// Admin Withdrawal List
+app.get('/api/admin/withdrawals', async (req, res) => {
+  try {
     const withdrawals = await withdrawalsCollection
       .find({})
       .sort({ createdAt: -1 })
@@ -447,103 +531,59 @@ app.get('/api/my-withdrawals', async (req, res) => {
 
     res.status(200).json(withdrawals);
 
-  } catch (error) {
-
-    console.error("Fetch My Withdrawals Error:", error);
-
-    res.status(500).json({
-      success:false,
-      message:error.message
-    });
-
-  }
-});
-
-
-
-// Admin Withdrawal List
-app.get('/api/admin/withdrawals', async (req, res) => {
-  try {
-
-    const withdrawals = await withdrawalsCollection
-      .find({})
-      .sort({ createdAt:-1 })
-      .toArray();
-
-    res.status(200).json(withdrawals);
-
   } catch(error){
-
     console.error("Fetch Withdrawals Error:", error);
-
     res.status(500).json({
-      success:false,
-      message:error.message
+      success: false,
+      message: error.message
     });
-
   }
 });
-
-
 
 // Admin Update Status
-app.put('/api/admin/withdrawals/:id', async(req,res)=>{
+app.put('/api/admin/withdrawals/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
 
-  try{
-
-    const {id}=req.params;
-    const {status}=req.body;
-
-
-    if(!ObjectId.isValid(id)){
+    if (!ObjectId.isValid(id)) {
       return res.status(400).json({
-        success:false,
-        message:"Invalid ID"
+        success: false,
+        message: "Invalid ID"
       });
     }
 
-
     const result = await withdrawalsCollection.updateOne(
-      {
-        _id:new ObjectId(id)
-      },
-      {
-        $set:{
-          status:status,
-          updatedAt:new Date()
-        }
+      { _id: new ObjectId(id) },
+      { 
+        $set: { 
+          status: status,
+          updatedAt: new Date() 
+        } 
       }
     );
 
-
-    if(result.matchedCount===0){
-
+    if (result.matchedCount === 0) {
       return res.status(404).json({
-        success:false,
-        message:"Withdrawal not found"
+        success: false,
+        message: "Withdrawal not found"
       });
-
     }
 
-
     res.json({
-      success:true,
-      message:`Status updated to ${status}`
+      success: true,
+      message: `Status updated to ${status}`
     });
 
-
-  }catch(error){
-
+  } catch(error){
     console.error(error);
-
     res.status(500).json({
-      success:false,
-      message:error.message
+      success: false,
+      message: error.message
     });
-
   }
-
 });
+
 // --- 6. USER MANAGEMENT & CRUD API ---
 app.get('/api/me', async (req, res) => {
   try {
@@ -562,23 +602,21 @@ app.get('/api/admin/users', async (req, res) => {
     const { role, userId } = req.query;
     let query = {};
 
-    if (role === 'master_admin') {
+    if (role === 'master_admin' || role === 'master' || role === 'admin') {
       query = {}; 
-    } else if (role === 'team_leader') {
-      let uId = userId;
-      if (userId && ObjectId.isValid(userId)) {
-        uId = new ObjectId(userId);
-      }
-      query = { $or: [{ createdBy: uId }, { _id: uId }] };
+    } else if (userId && ObjectId.isValid(userId)) {
+      const uId = new ObjectId(userId);
+      query = { 
+        $or: [
+          { _id: uId }, 
+          { createdBy: uId }
+        ] 
+      };
     } else {
-      let uId = userId;
-      if (userId && ObjectId.isValid(userId)) {
-        uId = new ObjectId(userId);
-      }
-      query = { _id: uId };
+      query = {};
     }
 
-    const users = await usersCollection.find(query).toArray();
+    const users = await usersCollection.find(query).project({ password: 0 }).toArray();
     res.status(200).json(users);
   } catch (err) {
     console.error("Fetch Users Error:", err);
@@ -699,123 +737,222 @@ app.delete('/api/admin/users/:id', async (req, res) => {
 // --- পেমেন্ট লিংক তৈরির রাউট (Create Link) ---
 app.post('/api/create-payment-link', async (req, res) => {
   try {
-    const { name, url, theme, amount, createdAt } = req.body;
+    const { name, url, theme, template, amount, createdAt, userEmail, userId } = req.body;
     
-    const selectedTheme = theme || 'light';
+    const selectedTheme = theme || template || 'light';
     const imagePath = selectedTheme === 'green' ? '/src/asset/cashapp_green.png' : '/src/asset/cashapp_light.png';
 
     const newLink = {
       name,
       url,
       theme: selectedTheme,
+      template: selectedTheme,
       amount,
       image: imagePath,
+      userEmail: userEmail || 'admin@mamun.com',
+      userId: userId && ObjectId.isValid(userId) ? new ObjectId(userId) : null,
       createdAt: createdAt || new Date()
     };
 
     const result = await paymentLinksCollection.insertOne(newLink);
-    res.status(201).json({ _id: result.insertedId, ...newLink });
+    res.status(201).json({ success: true, _id: result.insertedId, ...newLink });
   } catch (error) {
-    console.error("Error:", error);
+    console.error("Error creating payment link:", error);
     res.status(500).json({ success: false, error: "Server error" });
   }
 });
+app.get('/api/payment-links/:linkId', async (req, res) => {
+  try {
+    const { linkId } = req.params;
+    
+    let link = null;
+    
+    // ১. যদি _id দিয়ে ম্যাচ করে
+    if (ObjectId.isValid(linkId)) {
+      link = await paymentLinksCollection.findOne({ _id: new ObjectId(linkId) });
+    }
+    
+    // ২. যদি সরাসরি নাম বা ইউআরএলের অংশবিশেষ দিয়ে ম্যাচ করে
+    if (!link) {
+      link = await paymentLinksCollection.findOne({ 
+        $or: [
+          { name: linkId },
+          { url: { $regex: linkId, $options: 'i' } }
+        ]
+      });
+    }
+
+    if (!link) {
+      return res.status(404).json({ success: false, error: "Payment link not found" });
+    }
+
+    res.json(link);
+  } catch (error) {
+    console.error("Error fetching payment link details:", error);
+    res.status(500).json({ success: false, error: "Server error" });
+  }
+});
+
 
 // --- কার্ড আপডেট বা Save করার রাউট (Update Link & Theme) ---
 app.put('/api/payment-links/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { theme, image, name, url } = req.body;
+    const { theme, template, name, url } = req.body;
+
+    console.log("========== THEME UPDATE ==========");
+    console.log("ID:", id);
+    console.log("Received body:", req.body);
 
     if (!ObjectId.isValid(id)) {
       return res.status(400).json({ success: false, message: "Invalid Link ID format!" });
     }
 
-    const result = await paymentLinksCollection.updateOne(
+    // theme normalize করা (green / light ছাড়া অন্য কিছু আসলে light করে দিবে)
+    let finalTheme = (theme || template || "light").toString().toLowerCase().trim();
+    if (finalTheme !== "green") {
+      finalTheme = "light";
+    }
+
+    const imagePath = finalTheme === "green"
+      ? "/src/asset/cashapp_green.png"
+      : "/src/asset/cashapp_light.png";
+
+    const updateFields = {
+      theme: finalTheme,
+      template: finalTheme,
+      image: imagePath,
+    };
+
+    if (name) updateFields.name = name;
+    if (url) updateFields.url = url;
+
+    console.log("Will update with:", updateFields);
+
+    const result = await paymentLinksCollection.findOneAndUpdate(
       { _id: new ObjectId(id) },
-      { 
-        $set: { 
-          theme: theme, 
-          image: image,
-          name: name,
-          url: url
-        } 
-      }
+      { $set: updateFields },
+      { returnDocument: "after" }
     );
 
-    if (result.matchedCount === 0) {
+    if (!result) {
       return res.status(404).json({ success: false, message: "Payment link not found!" });
     }
 
-    res.status(200).json({ success: true, message: "Payment link and theme updated successfully!" });
+    console.log("Updated document theme:", result.theme);
+    console.log("==================================");
+
+    res.status(200).json({
+      success: true,
+      message: "Payment link and theme updated successfully!",
+      data: result          // আপডেট হওয়া পুরো ডকুমেন্ট ফেরত দিচ্ছি
+    });
+
   } catch (error) {
     console.error("Update Payment Link Error:", error);
     res.status(500).json({ success: false, error: "Server error while updating payment link" });
   }
 });
-
 // --- Payment link Crud delete matro master admin parbe  ---
 app.delete('/api/payment-links/:id', async (req, res) => {
-    try {
-        const linkId = req.params.id;
-        const { role, email } = req.body; // ফ্রন্টএন্ড থেকে পাঠানো রোল বা ইমেইল রিসিভ করা
+  try {
+    const linkId = req.params.id;
 
-        // মাস্টার এডমিন বা নির্দিষ্ট ইমেইল চেক করা (admin@mamun.com হলে পাস করবে)
-        const isMaster = role === 'master' || role === 'admin' || email === 'admin@mamun.com';
-
-        if (!isMaster) {
-            return res.status(403).json({ 
-                success: false, 
-                error: "Access Denied! Only Master Admin can delete payment links." 
-            });
-        }
-
-        const result = await paymentLinksCollection.deleteOne({ _id: new ObjectId(linkId) });
-
-        if (result.deletedCount === 0) {
-            return res.status(404).json({ success: false, error: "Payment link not found" });
-        }
-
-        res.status(200).json({ success: true, message: "Payment link deleted successfully by Master Admin." });
-
-    } catch (error) {
-        console.error("Delete Link Error:", error.message);
-        res.status(500).json({ success: false, error: "Internal Server Error" });
+    // ১. আইডি ভ্যালিড কিনা চেক করা
+    if (!ObjectId.isValid(linkId)) {
+      return res.status(400).json({
+        success: false,
+        error: "Invalid payment link id format"
+      });
     }
+
+    // ২. Query থেকে বা Body থেকে role এবং email সংগ্রহ করা
+    const role = req.query.role || req.body?.role;
+    const email = req.query.email || req.body?.email;
+
+    const query = { _id: new ObjectId(linkId) };
+
+    // ৩. মাস্টার অ্যাডমিন বা অ্যাডমিন না হলে শুধুমাত্র নিজের লিংক ডিলিট করতে পারবে
+    const isMasterAdmin = (role === 'master' || role === 'master_admin' || role === 'admin' || email === 'admin@mamun.com');
+
+    if (!isMasterAdmin) {
+      if (!email) {
+        return res.status(401).json({
+          success: false,
+          error: "Unauthorized: Email required to delete link"
+        });
+      }
+      // ডাটাবেজে 'email'-এর বদলে সঠিক ফিল্ড 'userEmail' ব্যবহার করা হলো
+      query.userEmail = email;
+    }
+
+    // ৪. ডাটাবেজ থেকে ডিলিট অপারেশন চালানো
+    const result = await paymentLinksCollection.deleteOne(query);
+
+    if (result.deletedCount === 0) {
+      return res.status(404).json({
+        success: false,
+        error: "Payment link not found or you do not have permission to delete it"
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Payment link deleted successfully"
+    });
+
+  } catch (error) {
+    console.error("Backend Delete Error:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message || "Internal Server Error"
+    });
+  }
 });
 
-// --- নির্দিষ্ট পেমেন্ট লিংকের ডিটেইলস আনার রাউট ---
-app.get('/api/payment-links', async (req, res) => {
-    try {
-        const { userEmail, role } = req.query;
 
-        let query = {};
-        
-        if (role !== 'master' && role !== 'admin') {
-            query = { userEmail: userEmail }; 
-        }
+// --- ADMIN / USER PASSWORD UPDATE API ---
+app.put('/api/admin/update-password', async (req, res) => {
+  try {
+    const { email, oldPassword, newPassword } = req.body;
 
-        const links = await paymentLinksCollection.find(query).toArray();
-        res.status(200).json({ success: true, links });
-
-    } catch (error) {
-        console.error("Error fetching links:", error.message);
-        res.status(500).json({ success: false, error: "Failed to fetch payment links" });
+    if (!email || !oldPassword || !newPassword) {
+      return res.status(400).json({ success: false, message: "All fields are required!" });
     }
+
+    // ইউজার ডাটাবেজে আছে কি না চেক করা
+    const user = await usersCollection.findOne({ email });
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found!" });
+    }
+// পুরোনো পাসওয়ার্ড সঠিক আছে কি না চেক করা
+    if (user.password !== oldPassword) {
+      return res.status(401).json({ success: false, message: "Incorrect old password!" });
+    }
+// নতুন পাসওয়ার্ড আপডেট করা
+    await usersCollection.updateOne(
+      { email: email },
+      { $set: { password: newPassword, updatedAt: new Date() } }
+    );
+
+    res.status(200).json({ success: true, message: "Password updated successfully!" });
+
+  } catch (error) {
+    console.error("Update Password Error:", error);
+    res.status(500).json({ success: false, message: "Server error while updating password" });
+  }
 });
 
 // --- PAYMENT STATUS CHECK API ---
 app.get('/i/:linkId/status', async (req, res) => {
   try {
     const { linkId } = req.params;
-    
     const transaction = await transactionsCollection.findOne({ invoiceId: linkId });
     const btcpayUrl = process.env.BTCPAY_URL;
     const storeId = process.env.BTCPAY_STORE_ID;
     const apiKey = process.env.BTCPAY_API_KEY;
     const normalizedBtcpayUrl = btcpayUrl ? (btcpayUrl.endsWith('/') ? btcpayUrl : `${btcpayUrl}/`) : '';
-
-    if (!transaction) {
+if (!transaction) {
       try {
         const objectIdLink = new ObjectId(linkId);
         const txById = await transactionsCollection.findOne({ _id: objectIdLink });
@@ -823,8 +960,7 @@ app.get('/i/:linkId/status', async (req, res) => {
             const response = await axios.get(`${normalizedBtcpayUrl}api/v1/stores/${storeId}/invoices/${txById.invoiceId}`, {
                headers: { 'Authorization': `token ${apiKey}` }
             });
-
-            return res.status(200).json({
+                return res.status(200).json({
                status: response.data.status 
             });
         }
@@ -833,14 +969,12 @@ app.get('/i/:linkId/status', async (req, res) => {
       }
       return res.status(404).json({ status: "not_found" });
     }
-
-    if (normalizedBtcpayUrl && storeId && apiKey && transaction.invoiceId) {
+if (normalizedBtcpayUrl && storeId && apiKey && transaction.invoiceId) {
         try {
             const btcpayRes = await axios.get(`${normalizedBtcpayUrl}api/v1/stores/${storeId}/invoices/${transaction.invoiceId}`, {
                 headers: { 'Authorization': `token ${apiKey}` }
             });
-            
-            const currentStatus = btcpayRes.data.status; 
+             const currentStatus = btcpayRes.data.status; 
 
             if (currentStatus === 'Settled' || currentStatus === 'Paid') {
                 await transactionsCollection.updateOne(
@@ -848,25 +982,21 @@ app.get('/i/:linkId/status', async (req, res) => {
                     { $set: { status: 'Paid' } }
                 );
                 return res.status(200).json({ status: 'completed' });
-            }
-
-            return res.status(200).json({ status: 'pending' });
+            } return res.status(200).json({ status: 'pending' });
         } catch (btcErr) {
             console.error("Error fetching status from BTCPay:", btcErr.message);
         }
     }
-
-    const isPaid = transaction.status === "Paid" || transaction.status === "Success" || transaction.status === "Settled";
+ const isPaid = transaction.status === "Paid" || transaction.status === "Success" || transaction.status === "Settled";
     return res.status(200).json({
       status: isPaid ? "completed" : "pending"
     });
 
   } catch (error) {
     console.error("Status Check Error:", error);
-    return res.status(500).json({ status: "error", message: error.message });
+    return res.status(500).json({ status: "error", message: `Internal server error: ${error.message}` });
   }
 });
-
 // ডাটাবেজ কানেক্ট করে সার্ভার রান করা নিশ্চিত করা হলো
 connectDB().then(() => {
   app.listen(PORT, () => {

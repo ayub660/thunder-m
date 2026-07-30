@@ -87,7 +87,7 @@ const PaymentCheckout = () => {
     alert("Copied to clipboard!");
   };
 
-  // থিম অনুযায়ী কালার ও স্টাইল নির্ধারণ (Green বা Light)
+  // Theme (Green OR Light)
   const isGreenTheme = linkData?.theme === 'green';
   const primaryColor = isGreenTheme ? '#16a34a' : '#00D54B'; // গ্রিন থিমের জন্য গাঢ় সবুজ, লাইটের জন্য ক্যাশঅ্যাপ গ্রিন
   const bgColorClass = isGreenTheme ? 'bg-green-50/40' : 'bg-[#f9f9f9]';

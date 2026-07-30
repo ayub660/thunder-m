@@ -14,24 +14,38 @@ export const CreateQrForm = () => {
   // লোকাল ও লাইভ (Vercel) পরিবেশের জন্য ডায়নামিক API বেস URL
   const API_URL = import.meta.env.MODE === 'production' ? 'https://thunder-m.vercel.app' : 'http://localhost:5000';
 
-  // ব্যাকএন্ড থেকে ডাইনামিক রোল ও ইমেইল সহ আগের ট্রানজেকশন বা লিংক লিস্ট ফেচ করা
-  const fetchLinks = () => {
-    // লোকালস্টোরেজ থেকে ইউজারের তথ্য রিড করা
-    const storedUser = JSON.parse(
-      localStorage.getItem('user') || 
-      localStorage.getItem('userInfo') || 
-      localStorage.getItem('admin') || 
-      localStorage.getItem('merchant')
-    ) || {};
+  // ইউজার ইনফো নিরাপদে রিড করার হেল্পার ফাংশন
+  const getCurrentUserInfo = () => {
+    let storedUser = {};
+    try {
+      const rawData = localStorage.getItem('userInfo') || 
+                      localStorage.getItem('user') || 
+                      localStorage.getItem('admin') || 
+                      localStorage.getItem('merchant');
+      storedUser = rawData ? JSON.parse(rawData) : {};
+    } catch (e) {
+      storedUser = {};
+    }
 
+    const userId = storedUser._id || storedUser.id || localStorage.getItem('userId') || '';
     const userEmail = storedUser.email || localStorage.getItem('userEmail') || '';
-    const role = storedUser.role || storedUser.isAdmin || localStorage.getItem('role') || 'master';
+    let role = storedUser.role || storedUser.isAdmin || localStorage.getItem('role') || '';
 
-    // ইমেইল এবং রোল কুয়েরি প্যারামিটার হিসেবে পাঠানো
-    fetch(`${API_URL}/api/transactions?userEmail=${encodeURIComponent(userEmail)}&role=${encodeURIComponent(role)}`)
+    if (!role) {
+      role = (userEmail === 'admin@mamun.com') ? 'master' : 'user';
+    }
+
+    return { userId, userEmail, role };
+  };
+
+  // ব্যাকএন্ড থেকে ডাইনামিক userId, email ও role সহ ট্রানজেকশন বা লিংক লিস্ট ফেচ করা
+  const fetchLinks = () => {
+    const { userId, userEmail, role } = getCurrentUserInfo();
+
+    fetch(`${API_URL}/api/transactions?userId=${encodeURIComponent(userId)}&userEmail=${encodeURIComponent(userEmail)}&role=${encodeURIComponent(role)}`)
       .then(res => res.json())
       .then(data => {
-        const items = data.success ? data.transactions : (Array.isArray(data) ? data : []);
+        const items = data.success ? data.transactions : (Array.isArray(data) ? data : (data.links || []));
         setLinkList(items);
       })
       .catch(err => console.error('Error fetching links:', err));
@@ -47,7 +61,6 @@ export const CreateQrForm = () => {
     
     if (targetInvoice && typeof targetInvoice === 'string') {
       if (targetInvoice.startsWith('lnbc')) {
-        // ক্যাশঅ্যাপ অফিশিয়াল লাইটনিং ডিপ লিংক স্কিম
         const cashAppUrl = `https://cash.app/launch/lightning/${targetInvoice}`;
         window.location.href = cashAppUrl;
       } else if (targetInvoice.includes('cash.app') || targetInvoice.startsWith('http')) {
@@ -82,14 +95,7 @@ export const CreateQrForm = () => {
       return;
     }
     
-    // বর্তমান লগইন করা ইউজারের ইমেইল বের করা ব্যাকএন্ডে পাঠানোর জন্য
-    const storedUser = JSON.parse(
-      localStorage.getItem('user') || 
-      localStorage.getItem('userInfo') || 
-      localStorage.getItem('admin') || 
-      localStorage.getItem('merchant')
-    ) || {};
-    const currentUserEmail = storedUser.email || localStorage.getItem('userEmail') || 'admin@mamun.com';
+    const { userId, userEmail, role } = getCurrentUserInfo();
 
     setLoading(true);
     try {
@@ -103,7 +109,9 @@ export const CreateQrForm = () => {
           currency: 'USD',
           orderId: 'ORDER-' + Date.now(),
           buyerEmail: 'customer@example.com',
-          userEmail: currentUserEmail // ডাইনামিক ইউজার ইমেইল পাস করা হলো
+          userEmail: userEmail,
+          userId: userId, 
+          role: role
         })
       });
 
@@ -148,16 +156,16 @@ export const CreateQrForm = () => {
   };
 
   return (
-    <div className="p-6 md:p-10 bg-gradient-to-br from-gray-50 via-gray-50/50 to-green-50/20 min-h-screen">
-      <div className="max-w-2xl mx-auto space-y-8">
+    <div className="w-full">
+      <div className="w-full space-y-6">
         
         {/* পেজ হেডার */}
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white/85 backdrop-blur-md p-5 rounded-3xl border border-gray-100 shadow-sm">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white/90 backdrop-blur-md p-4 sm:p-5 rounded-2xl border border-gray-100 shadow-sm">
           <div>
             <div className="flex items-center gap-1.5 text-green-600 font-bold text-[11px] uppercase tracking-wider mb-0.5">
               <Zap size={13} /> CashApp Style Gateway
             </div>
-            <h1 className="text-xl md:text-2xl font-extrabold text-gray-900 tracking-tight">Create Lightning QR</h1>
+            <h1 className="text-xl sm:text-2xl font-extrabold text-gray-900 tracking-tight">Create Lightning QR</h1>
             <p className="text-xs text-gray-400 mt-0.5">Generate dynamic amount lnbc invoice QRs instantly.</p>
           </div>
           <div className="bg-green-50 text-green-700 px-3.5 py-1.5 rounded-xl font-bold text-xs border border-green-100 flex items-center gap-1.5 shadow-sm">
@@ -167,7 +175,7 @@ export const CreateQrForm = () => {
         </div>
 
         {/* ফর্ম সেকশন */}
-        <div className="bg-white p-6 md:p-8 rounded-3xl shadow-sm border border-gray-100/80 space-y-5">
+        <div className="bg-white p-4 sm:p-6 md:p-8 rounded-2xl shadow-sm border border-gray-100/80 space-y-5">
           <div>
             <h2 className="text-lg font-bold text-gray-900">New Lightning Invoice</h2>
             <p className="text-xs text-gray-400 mt-0.5">Enter amount to create dynamic payment QR.</p>
@@ -217,7 +225,7 @@ export const CreateQrForm = () => {
 
         {/* QR কোড প্রিভিউ সেকশন */}
         {lightningInvoice && (
-          <div className="flex flex-col items-center justify-center bg-[#00D54B] p-6 md:p-8 rounded-[2.5rem] shadow-xl text-white animate-in fade-in zoom-in duration-200">
+          <div className="flex flex-col items-center justify-center bg-[#00D54B] p-6 sm:p-8 rounded-[2.5rem] shadow-xl text-white animate-in fade-in zoom-in duration-200">
             <div className="w-full flex flex-col items-center max-w-xs">
               <p className="text-[11px] font-extrabold tracking-widest uppercase opacity-90 mb-1">
                 SCAN OR TAP TO PAY
@@ -226,9 +234,8 @@ export const CreateQrForm = () => {
                 ${currentAmount}
               </h2>
 
-              {/* ক্যাশঅ্যাপ স্টাইল কিউআর কার্ড */}
               <div className="relative bg-white p-4 rounded-3xl shadow-2xl">
-                <div className="relative bg-white rounded-xl overflow-hidden">
+                <div className="relative bg-white rounded-xl overflow-hidden flex justify-center">
                   <QRCodeSVG 
                     value={lightningInvoice} 
                     size={180}
@@ -238,7 +245,6 @@ export const CreateQrForm = () => {
                   />
                 </div>
 
-                {/* মাঝখানের ক্যাশঅ্যাপ লোগো বা আইকন */}
                 <div className="absolute inset-0 m-auto w-10 h-10 bg-[#00D54B] rounded-xl flex items-center justify-center shadow-md border-2 border-white">
                   <DollarSign className="w-5 h-5 text-white stroke-[3]" />
                 </div>
@@ -248,7 +254,7 @@ export const CreateQrForm = () => {
                 Waiting for payment.
               </p>
               
-              <div className="flex gap-2 w-full">
+              <div className="flex flex-col sm:flex-row gap-2 w-full">
                 <button 
                   onClick={() => {
                     navigator.clipboard.writeText(generatedLink);
@@ -270,8 +276,8 @@ export const CreateQrForm = () => {
         )}
 
         {/* পেমেন্ট হিস্ট্রি */}
-        <div className="bg-white p-6 md:p-8 rounded-3xl shadow-sm border border-gray-100">
-          <div className="flex justify-between items-center mb-5">
+        <div className="bg-white p-4 sm:p-6 md:p-8 rounded-2xl shadow-sm border border-gray-100">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mb-5">
             <div>
               <h2 className="text-lg font-bold text-gray-900">Payment History</h2>
               <p className="text-xs text-gray-400 mt-0.5">Previous generated lightning invoices.</p>
@@ -292,7 +298,7 @@ export const CreateQrForm = () => {
                     key={item.id || item._id || index} 
                     className="p-3.5 rounded-2xl border border-gray-100 hover:border-green-200 hover:shadow-sm transition-all bg-gray-50/40 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 group"
                   >
-                    <div className="space-y-0.5">
+                    <div className="space-y-0.5 w-full sm:w-auto overflow-hidden">
                       <div className="flex items-center gap-2">
                         <span className="font-bold text-gray-900 text-sm">
                           ${item.amount || '0.00'}
@@ -306,7 +312,7 @@ export const CreateQrForm = () => {
                           {item.status || 'Pending'}
                         </span>
                       </div>
-                      <p className="text-[11px] text-gray-500 font-mono truncate max-w-xs">
+                      <p className="text-[11px] text-gray-500 font-mono truncate max-w-[250px] sm:max-w-md">
                         {itemLink || 'No link'}
                       </p>
                       <p className="text-[10px] text-gray-400 flex items-center gap-1 font-medium">
@@ -317,7 +323,7 @@ export const CreateQrForm = () => {
                     {itemLink && (
                       <button 
                         onClick={() => handleCashAppRedirect(itemLink)}
-                        className="w-full sm:w-auto px-3.5 py-1.5 bg-white border border-gray-200 group-hover:border-green-500 group-hover:text-green-600 text-gray-700 rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
+                        className="w-full sm:w-auto px-3.5 py-1.5 bg-white border border-gray-200 group-hover:border-green-500 group-hover:text-green-600 text-gray-700 rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-1.5 shadow-sm cursor-pointer shrink-0"
                       >
                         Pay App <ExternalLink size={12} />
                       </button>
