@@ -122,26 +122,36 @@ app.post('/api/auth/login', async (req, res) => {
 // --- BTCPAY GATEWAY QR & INVOICE API (CashApp Style Dynamic Generation) ---
 app.post('/api/generate-gateway-qr', async (req, res) => {
     try {
-        const { linkId, amount, buyerEmail, userEmail, userId, currency, orderId } = req.body;
+        const { 
+            linkId, 
+            amount, 
+            buyerEmail, 
+            userEmail, 
+            userId, 
+            userName,
+            currency, 
+            orderId 
+        } = req.body;
 
         const btcpayUrl = process.env.BTCPAY_URL;
         const storeId = process.env.BTCPAY_STORE_ID;
         const apiKey = process.env.BTCPAY_API_KEY;
 
-        // আপনার ফ্রন্টএন্ড ডোমেইন এখানে সেট করা হলো
-        const frontendDomain = process.env.FRONTEND_URL || "https://casha-app-pay.netlify.app";
+        const frontendDomain = process.env.FRONTEND_URL || "https://cash-app-pay.netlify.app";
+        const dynamicLinkId = linkId || 'pay';   // ← ডাইনামিক linkId
 
-        // যদি BTCPay কনফিগার করা না থাকে, তবে ফলব্যাক QR তৈরি করবে
+        // ========== FALLBACK MODE (BTCPay না থাকলে) ==========
         if (!btcpayUrl || !storeId || !apiKey) {
             const currentOrderId = orderId || 'ORDER-' + Date.now();
-            const fallbackLink = `${frontendDomain}/ava?amount=${amount || '10.00'}&order=${currentOrderId}`;
+            const fallbackInvoiceId = 'FALLBACK-' + Date.now();
+            const fallbackLink = `${frontendDomain}/${dynamicLinkId}/i/${fallbackInvoiceId}`;
+            
             const qrCodeImageBase64 = await QRCode.toDataURL(fallbackLink);
             
-            // ফলব্যাক মোডেও সঠিক userEmail ও userId সেভ করা হলো
             if (typeof transactionsCollection !== 'undefined' && transactionsCollection) {
                 try {
                     await transactionsCollection.insertOne({
-                        invoiceId: 'FALLBACK-' + Date.now(),
+                        invoiceId: fallbackInvoiceId,
                         payId: fallbackLink,
                         lnInvoice: fallbackLink,
                         name: `Payment for ${linkId || 'Quick Invoice'}`,
@@ -152,6 +162,8 @@ app.post('/api/generate-gateway-qr', async (req, res) => {
                         bolt11: fallbackLink,
                         userEmail: userEmail || null,
                         userId: userId && ObjectId.isValid(userId) ? new ObjectId(userId) : null,
+                        userName: userName || null,
+                        linkId: linkId || null,
                         createdAt: new Date()
                     });
                 } catch (dbErr) {
@@ -161,7 +173,7 @@ app.post('/api/generate-gateway-qr', async (req, res) => {
             
             return res.status(200).json({
                 success: true,
-                invoiceId: 'FALLBACK-' + Date.now(),
+                invoiceId: fallbackInvoiceId,
                 checkoutLink: fallbackLink,
                 amount: amount || "10.00",
                 qrCodeUrl: qrCodeImageBase64,
@@ -171,6 +183,7 @@ app.post('/api/generate-gateway-qr', async (req, res) => {
             });
         }
 
+        // ========== BTCPay MODE ==========
         const normalizedBtcpayUrl = btcpayUrl.endsWith('/') ? btcpayUrl : `${btcpayUrl}/`;
         const endpoint = `${normalizedBtcpayUrl}api/v1/stores/${storeId}/invoices`;
 
@@ -181,6 +194,7 @@ app.post('/api/generate-gateway-qr', async (req, res) => {
             metadata: {
                 linkId: linkId || 'CashAppStylePayment',
                 orderId: orderId || 'ORDER-' + Date.now(),
+                userEmail: userEmail || null
             },
             checkout: {
                 speedPolicy: "HighSpeed",
@@ -208,18 +222,23 @@ app.post('/api/generate-gateway-qr', async (req, res) => {
         const invoice = btcpayResponse.data;
         const invoiceId = invoice.id;
         
-        // --- BTCPay er link er poriborte frontend link generate hobe ---
-        let checkoutLink = `${frontendDomain}/ava?invoiceId=${invoiceId}&amount=${amount || "10.00"}`;
+        // ========== ডাইনামিক Checkout Link ==========
+        let checkoutLink = `${frontendDomain}/${dynamicLinkId}/i/${invoiceId}`;
 
-        // --- Lightning Invoice (bolt11) Ber korar logic ---
+        // Lightning Invoice (bolt11) বের করা
         let bolt11Invoice = "";
         try {
-            const paymentMethodsRes = await axios.get(`${normalizedBtcpayUrl}api/v1/stores/${storeId}/invoices/${invoiceId}/payment-methods`, {
-                headers: { 'Authorization': `token ${apiKey}` }
-            });
+            const paymentMethodsRes = await axios.get(
+                `${normalizedBtcpayUrl}api/v1/stores/${storeId}/invoices/${invoiceId}/payment-methods`, 
+                {
+                    headers: { 'Authorization': `token ${apiKey}` }
+                }
+            );
             
             if (paymentMethodsRes && paymentMethodsRes.data) {
-                const methods = Array.isArray(paymentMethodsRes.data) ? paymentMethodsRes.data : [paymentMethodsRes.data];
+                const methods = Array.isArray(paymentMethodsRes.data) 
+                    ? paymentMethodsRes.data 
+                    : [paymentMethodsRes.data];
                 
                 const lightningMethod = methods.find(m => 
                     m.paymentMethod === "BTC-LightningNetwork" || 
@@ -240,7 +259,9 @@ app.post('/api/generate-gateway-qr', async (req, res) => {
         }
 
         if (!bolt11Invoice && invoice.paymentMethods) {
-            const lnMethod = invoice.paymentMethods.find(m => m.paymentMethod === "BTC-LightningNetwork" || m.paymentMethodId === "BTC-LightningNetwork");
+            const lnMethod = invoice.paymentMethods.find(
+                m => m.paymentMethod === "BTC-LightningNetwork" || m.paymentMethodId === "BTC-LightningNetwork"
+            );
             if (lnMethod) {
                 bolt11Invoice = lnMethod.destination || lnMethod.bolt11 || "";
             }
@@ -265,7 +286,7 @@ app.post('/api/generate-gateway-qr', async (req, res) => {
             return res.status(500).json({ success: false, error: "Failed to generate QR Code image" });
         }
 
-        // ডাটাবেজে সেভ করার সময় সঠিক userEmail এবং userId সংরক্ষণ করা হলো
+        // ========== DATABASE SAVE ==========
         if (typeof transactionsCollection !== 'undefined' && transactionsCollection) {
             try {
                 await transactionsCollection.insertOne({
@@ -280,6 +301,8 @@ app.post('/api/generate-gateway-qr', async (req, res) => {
                     bolt11: bolt11Invoice,
                     userEmail: userEmail || null,
                     userId: userId && ObjectId.isValid(userId) ? new ObjectId(userId) : null,
+                    userName: userName || null,
+                    linkId: linkId || null,
                     createdAt: new Date()
                 });
             } catch (dbErr) {
@@ -306,7 +329,6 @@ app.post('/api/generate-gateway-qr', async (req, res) => {
         });
     }
 });
-
 // --- 3. DASHBOARD STATS & BALANCE API ---
 
 
