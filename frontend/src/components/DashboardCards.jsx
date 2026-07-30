@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { CreateQrForm } from './CreateQrForm';
 import { Wallet, Users, Coins, Receipt, TrendingUp, PiggyBank, ArrowDownToLine, Copy, Trash2, User, Check, Link as LinkIcon } from "lucide-react";
@@ -21,6 +21,10 @@ export const DashboardCards = () => {
     totalEarnings: "$0.00",
     totalWithdrawn: "$0.00"
   });
+
+  // ===== Sound related =====
+  const [lastBalance, setLastBalance] = useState(null);
+  const isFirstLoad = useRef(true);
 
   const API_URL = import.meta.env.MODE === 'production'
     ? 'https://thunder-m.vercel.app'
@@ -64,9 +68,29 @@ export const DashboardCards = () => {
     role === 'master_admin' ||
     userEmail === 'admin@mamun.com';
 
+  // ===== Payment Sound =====
+  const playPaymentSound = () => {
+    try {
+      const audio = new Audio('/sounds/cashapp.mp3');
+      audio.volume = 0.9;
+      audio.play().catch((err) => {
+        console.log('Sound play blocked by browser:', err);
+      });
+    } catch (e) {
+      console.log('Audio error:', e);
+    }
+  };
+
   useEffect(() => {
     fetchPaymentLinks();
     fetchStats();
+
+    // প্রতি ৫ সেকেন্ডে ব্যালেন্স চেক → নতুন পেমেন্ট এলে সাউন্ড
+    const interval = setInterval(() => {
+      fetchStats();
+    }, 5000);
+
+    return () => clearInterval(interval);
   }, []);
 
   // ========== FETCH PAYMENT LINKS ==========
@@ -121,7 +145,7 @@ export const DashboardCards = () => {
     }
   };
 
-  // ========== FETCH STATS ==========
+  // ========== FETCH STATS (Sound সহ) ==========
   const fetchStats = async () => {
     try {
       const { email, role, userId } = getAuth();
@@ -136,9 +160,18 @@ export const DashboardCards = () => {
       });
 
       const data = response.data || {};
+      const newBalance = Number(data.balance) || 0;
+
+      // প্রথম লোডে সাউন্ড বাজাবে না, শুধু ব্যালেন্স বাড়লে বাজাবে
+      if (!isFirstLoad.current && lastBalance !== null && newBalance > lastBalance) {
+        playPaymentSound();
+      }
+
+      isFirstLoad.current = false;
+      setLastBalance(newBalance);
 
       setStats({
-        balance: `$${(Number(data.balance) || 0).toLocaleString()}.00`,
+        balance: `$${newBalance.toLocaleString()}.00`,
         myOwnEarnings: `$${(Number(data.myOwnEarnings) || 0).toLocaleString()}.00`,
         teamTotalEarnings: `$${(Number(data.teamTotalEarnings) || 0).toLocaleString()}.00`,
         totalEarnings: `$${(Number(data.totalEarnings) || 0).toLocaleString()}.00`,

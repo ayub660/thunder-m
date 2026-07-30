@@ -111,18 +111,24 @@ export const CreateQrForm = () => {
           buyerEmail: 'customer@example.com',
           userEmail: userEmail,
           userId: userId, 
-          role: role
+          role: role,
+          linkId: 'pay'   // ← ডাইনামিক করতে চাইলে পরে change করবেন
         })
       });
 
       const data = await response.json();
 
       if (data.success && (data.lightningInvoice || data.bolt11 || data.checkoutLink)) {
-        const rawInvoice = data.checkoutLink || data.lightningInvoice || data.bolt11 || '';
         
+        // QR কোডের জন্য Lightning Invoice (lnbc...) ব্যবহার
+        const lnInvoice = data.bolt11 || data.lightningInvoice || data.lnInvoice || '';
+        
+        // Copy / Pay App বাটনের জন্য webpage লিংক
+        const pageLink = data.checkoutLink || '';
+
         setCurrentAmount(amount);
-        setGeneratedLink(rawInvoice);
-        setLightningInvoice(rawInvoice);
+        setGeneratedLink(pageLink);
+        setLightningInvoice(lnInvoice || pageLink); // lnbc না থাকলে fallback হিসেবে pageLink
         fetchLinks();
         setAmount("");
         
@@ -257,7 +263,7 @@ export const CreateQrForm = () => {
               <div className="flex flex-col sm:flex-row gap-2 w-full">
                 <button 
                   onClick={() => {
-                    navigator.clipboard.writeText(generatedLink);
+                    navigator.clipboard.writeText(generatedLink || lightningInvoice);
                     Swal.fire({ icon: 'success', title: 'Copied!', text: 'Invoice copied to clipboard', timer: 1200, showConfirmButton: false, confirmButtonColor: '#00D54B' });
                   }}
                   className="flex-1 bg-white/20 hover:bg-white/30 text-white border border-white/30 py-2.5 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer backdrop-blur-sm"
@@ -265,7 +271,7 @@ export const CreateQrForm = () => {
                   Copy Link
                 </button>
                 <button 
-                  onClick={() => handleCashAppRedirect(generatedLink)}
+                  onClick={() => handleCashAppRedirect(generatedLink || lightningInvoice)}
                   className="flex-1 bg-black hover:bg-gray-900 text-white py-2.5 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-md cursor-pointer"
                 >
                   Pay App <ExternalLink size={12} />

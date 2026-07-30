@@ -33,6 +33,7 @@ const AmountSelectionPage = () => {
             userEmail: response.data.userEmail || response.data.email || null,
             userId: response.data.userId || null
           });
+          document.title = response.data.name || linkId;
         }
       } catch (err) {
         console.error("Error fetching link details:", err);

@@ -15,16 +15,15 @@ export function TransactionsPage() {
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // ফিল্টার স্টেট
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
 
-  // base URL
-  const API_URL = import.meta.env.MODE === 'production' ? 'https://thunder-m.vercel.app' : 'http://localhost:5000';
+  const API_URL = import.meta.env.MODE === 'production' 
+    ? 'https://thunder-m.vercel.app' 
+    : 'http://localhost:5000';
 
-  // ব্যাকএন্ড থেকে ডাইনামিক রোল ও আইডি সহ রিয়েল ডাটা ফেচ করা
   const fetchTransactions = () => {
     setLoading(true);
 
@@ -69,7 +68,6 @@ export function TransactionsPage() {
     fetchTransactions();
   }, [API_URL]);
 
-  // --- ডাটাবেজ ডাটা থেকে ডাইনামিক স্ট্যাটস ক্যালকুলেশন ---
   const totalTransactionsCount = transactions.length;
 
   const totalVolume = transactions
@@ -85,14 +83,20 @@ export function TransactionsPage() {
     ? Math.round((expiredCount / totalTransactionsCount) * 100) 
     : 0;
 
-  // --- Filtering logic (Fixed Date Comparison) ---
   const filteredTransactions = transactions.filter(t => {
-    const userNameField = t.customerName || t.name || t.fullName || t.userName || t.user || t.buyerEmail || t.email || t.userEmail || "";
-    
+    const userField = (
+      t.userName || t.userEmail || t.email || t.customerName || 
+      t.name || t.fullName || t.buyerEmail || t.linkId || ""
+    ).toString();
+
+    const descField = (
+      t.linkId || t.description || t.orderId || t.name || ""
+    ).toString();
+
     const matchesSearch = 
-      userNameField.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (t.invoiceId || t.payId || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (t.description || t.orderId || "").toLowerCase().includes(searchTerm.toLowerCase());
+      userField.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      descField.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (t.invoiceId || t.payId || "").toLowerCase().includes(searchTerm.toLowerCase());
 
     let matchesStatus = true;
     if (statusFilter !== 'All') {
@@ -103,19 +107,14 @@ export function TransactionsPage() {
       }
     }
 
-    // তারিখ ফিল্টারিংয়ের সমস্যা সমাধানের জন্য সময় বাদ দিয়ে শুধু YYYY-MM-DD ফরম্যাটে তুলনা করা হয়েছে
     const rawDate = t.date || t.createdAt;
     let matchesFrom = true;
     let matchesTo = true;
 
     if (rawDate) {
       const itemDateOnly = new Date(rawDate).toISOString().split('T')[0];
-      if (fromDate) {
-        matchesFrom = itemDateOnly >= fromDate;
-      }
-      if (toDate) {
-        matchesTo = itemDateOnly <= toDate;
-      }
+      if (fromDate) matchesFrom = itemDateOnly >= fromDate;
+      if (toDate) matchesTo = itemDateOnly <= toDate;
     }
 
     return matchesSearch && matchesStatus && matchesFrom && matchesTo;
@@ -130,7 +129,6 @@ export function TransactionsPage() {
 
   return (
     <div className="p-4 sm:p-6 md:p-8 bg-[#F9FAFB] min-h-screen">
-      {/* Page header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
         <div>
           <h1 className="text-2xl sm:text-3xl font-extrabold text-gray-900 tracking-tight">Transactions</h1>
@@ -144,7 +142,6 @@ export function TransactionsPage() {
         </button>
       </div>
 
-      {/* --- ১. Dynamic status card --- */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 mb-8">
         <div className="bg-white p-5 sm:p-6 rounded-2xl border border-gray-100 shadow-sm flex flex-col justify-between">
           <span className="text-[11px] font-bold uppercase tracking-wider text-gray-400">Total Transactions</span>
@@ -175,7 +172,6 @@ export function TransactionsPage() {
         </div>
       </div>
 
-      {/* --- 2. Filter search kora --- */}
       <div className="bg-white p-4 sm:p-5 rounded-2xl border border-gray-100 shadow-sm mb-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 items-center">
         <div className="relative">
           <label className="block text-[11px] font-bold uppercase tracking-wider text-gray-400 mb-1">Search</label>
@@ -243,7 +239,6 @@ export function TransactionsPage() {
         </div>
       </div>
 
-      {/* --- 3. transaction list table --- */}
       <TransactionList items={filteredTransactions} loading={loading} />
     </div>
   );

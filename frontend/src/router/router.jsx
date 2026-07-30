@@ -27,7 +27,7 @@ const ProtectedRoute = ({ children }) => {
   return children;
 };
 
-// প্রোটেক্টেড উইথড্র পেজ রুট র‍্যাপার (শুধুমাত্র লজিক হ্যান্ডেল করবে)
+// প্রোটেক্টেড উইথড্র পেজ রুট র‍্যাপার
 const WithdrawalsWrapper = () => {
   const [isAdmin, setIsAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -52,7 +52,6 @@ const WithdrawalsWrapper = () => {
     return <div className="p-8 text-center text-gray-500 font-medium">Loading...</div>;
   }
 
-  
   return isAdmin ? <WithdrawalsAdmin /> : <WithdrawalForm />;
 };
 
@@ -103,14 +102,19 @@ export const router = createBrowserRouter([
       },
     ],
   },
+
+  // ========== Payment Related Public Routes ==========
+  // সবচেয়ে specific route আগে রাখতে হবে
   {
-    
-    path: "/:linkId",
-    element: <AmountSelectionPage />,
-  },
-  {
-    
     path: "/:linkId/i/:invoiceId",
     element: <PaymentCheckout />,
+  },
+  {
+    path: "/i/:invoiceId",
+    element: <PaymentCheckout />,
+  },
+  {
+    path: "/:linkId",
+    element: <AmountSelectionPage />,
   },
 ]);
