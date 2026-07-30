@@ -313,7 +313,7 @@ app.post('/api/generate-gateway-qr', async (req, res) => {
 
 app.get('/api/balance', async (req, res) => {
   try {
-    const { email, role } = req.query;
+    const { email, role, userId } = req.query;
 
     let query = {};
     const isMasterAdmin = (
@@ -330,6 +330,7 @@ app.get('/api/balance', async (req, res) => {
     const transactions = await transactionsCollection.find(query).toArray();
     const withdrawals = await withdrawalsCollection.find(query).toArray();
 
+    // শুধু Paid ট্রানজেকশন থেকে আয়
     let totalEarnings = 0;
     transactions.forEach(t => {
       const status = (t.status || "").toLowerCase();
@@ -338,19 +339,33 @@ app.get('/api/balance', async (req, res) => {
       }
     });
 
+    // শুধু Paid / Approved withdrawal
     let totalWithdrawn = 0;
+    // Pending withdrawal (hold থাকবে)
+    let pendingWithdrawn = 0;
+
     withdrawals.forEach(w => {
-      totalWithdrawn += Number(w.amount || 0);
+      const status = (w.status || "pending").toLowerCase();
+      const amt = Number(w.amount || w.originalAmount || 0);
+
+      if (status === "paid" || status === "approved") {
+        totalWithdrawn += amt;
+      } else if (status === "pending") {
+        pendingWithdrawn += amt;
+      }
     });
 
-    let currentBalance = totalEarnings - totalWithdrawn;
+    // Available = আয় - Paid Withdraw - Pending Withdraw
+    let currentBalance = totalEarnings - totalWithdrawn - pendingWithdrawn;
+    if (currentBalance < 0) currentBalance = 0;
 
     res.json({
       balance: currentBalance,
       myOwnEarnings: totalEarnings,
       teamTotalEarnings: 0,
       totalEarnings: totalEarnings,
-      totalWithdrawn: totalWithdrawn
+      totalWithdrawn: totalWithdrawn,
+      pendingWithdrawn: pendingWithdrawn
     });
 
   } catch (error) {
@@ -455,45 +470,76 @@ app.post("/api/btcpay/webhook", async (req, res) => {
 // --- 5. WITHDRAWAL API ---
 app.post('/api/withdraw', async (req, res) => {
   try {
-    const { amount, userName, userEmail, payoutMethod } = req.body;
+    const { amount, userName, userEmail, userId, payoutMethod } = req.body;
+
     if (!amount || amount <= 0) {
       return res.status(400).json({ success: false, message: "Invalid withdrawal amount" });
     }
 
+    if (!userEmail) {
+      return res.status(400).json({ success: false, message: "User email is required" });
+    }
+
+    // বর্তমান ব্যালেন্স চেক (over-request আটকাতে)
+    const txQuery = { userEmail: userEmail };
+    const transactions = await transactionsCollection.find(txQuery).toArray();
+    const withdrawals = await withdrawalsCollection.find(txQuery).toArray();
+
+    let totalEarnings = 0;
+    transactions.forEach(t => {
+      const status = (t.status || "").toLowerCase();
+      if (status === "paid" || status === "success" || status === "settled") {
+        totalEarnings += Number(t.amount || 0);
+      }
+    });
+
+    let totalWithdrawn = 0;
+    let pendingWithdrawn = 0;
+    withdrawals.forEach(w => {
+      const status = (w.status || "pending").toLowerCase();
+      const amt = Number(w.amount || w.originalAmount || 0);
+      if (status === "paid" || status === "approved") {
+        totalWithdrawn += amt;
+      } else if (status === "pending") {
+        pendingWithdrawn += amt;
+      }
+    });
+
+    const available = totalEarnings - totalWithdrawn - pendingWithdrawn;
+
+    if (Number(amount) > available) {
+      return res.status(400).json({ 
+        success: false, 
+        message: `Insufficient funds. Available: $${available.toFixed(2)}` 
+      });
+    }
+
     const withdrawalRecord = {
       userName: userName || "User",
-      userEmail: userEmail || "",
+      userEmail: userEmail,
+      userId: userId && ObjectId.isValid(userId) ? new ObjectId(userId) : null,
       amount: Number(amount),
       originalAmount: Number(amount),
       type: "User Payout",
-      payoutMethod: payoutMethod || "Cash",
+      payoutMethod: payoutMethod || "Bank Transfer",
       status: "Pending",
       requestTime: new Date().toLocaleString(),
       createdAt: new Date()
     };
-    await withdrawalsCollection.insertOne(withdrawalRecord);
 
-    const transactionRecord = {
-      id: new ObjectId().toString(),
-      name: "Withdrawal Request",
-      date: new Date().toISOString().split('T')[0],
-      amount: Number(amount),
-      status: "Pending",
-      createdAt: new Date()
-    };
-    await transactionsCollection.insertOne(transactionRecord);
+    await withdrawalsCollection.insertOne(withdrawalRecord);
 
     res.status(200).json({ 
       success: true, 
       message: "Withdrawal request submitted successfully",
       withdrawnAmount: amount 
     });
+
   } catch (error) {
     console.error("Withdrawal Error:", error);
     res.status(500).json({ success: false, message: "Server error during withdrawal" });
   }
 });
-
 // User Withdrawal History
 app.get('/api/my-withdrawals', async (req, res) => {
   try {

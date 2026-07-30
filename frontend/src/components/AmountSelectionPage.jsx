@@ -13,11 +13,14 @@ const AmountSelectionPage = () => {
   
   const [linkInfo, setLinkInfo] = useState({
     name: linkId || 'Stephanie',
-    theme: 'light'
+    theme: 'light',
+    userEmail: null,
+    userId: null
   });
 
-  // লোকাল ও লাইভ (Vercel) পরিবেশের জন্য ডায়নামিক API বেস URL
-  const API_URL = import.meta.env.MODE === 'production' ? 'https://thunder-m.vercel.app' : 'http://localhost:5000';
+  const API_URL = import.meta.env.MODE === 'production' 
+    ? 'https://thunder-m.vercel.app' 
+    : 'http://localhost:5000';
 
   useEffect(() => {
     const fetchLinkDetails = async () => {
@@ -26,11 +29,14 @@ const AmountSelectionPage = () => {
         if (response.data) {
           setLinkInfo({
             name: response.data.name || linkId,
-            theme: response.data.theme || 'light'
+            theme: response.data.theme || 'light',
+            userEmail: response.data.userEmail || response.data.email || null,
+            userId: response.data.userId || null
           });
         }
       } catch (err) {
         console.error("Error fetching link details:", err);
+        setError('Payment link not found');
       } finally {
         setFetchingLink(false);
       }
@@ -38,10 +44,11 @@ const AmountSelectionPage = () => {
 
     if (linkId) {
       fetchLinkDetails();
+    } else {
+      setFetchingLink(false);
     }
-  }, [linkId]);
+  }, [linkId, API_URL]);
 
-  // নু্মপ্যাড হ্যান্ডলার
   const handleKeyPress = (val) => {
     if (val === 'del') {
       setAmount((prev) => (prev.length > 1 ? prev.slice(0, -1) : '0'));
@@ -60,6 +67,11 @@ const AmountSelectionPage = () => {
       return;
     }
 
+    if (!linkInfo.userEmail) {
+      setError('Payment link owner not found. Please refresh.');
+      return;
+    }
+
     setLoading(true);
     setError('');
 
@@ -68,13 +80,20 @@ const AmountSelectionPage = () => {
         linkId: linkId,
         amount: amount,
         buyerEmail: 'customer@example.com',
-        userEmail: 'admin@mamun.com'
+        userEmail: linkInfo.userEmail,   // ← মালিকের ইমেইল
+        userId: linkInfo.userId,         // ← মালিকের userId
+        currency: 'USD',
+        orderId: 'ORDER-' + Date.now()
       });
 
       if (response.data.success && response.data.invoiceId) {
         const invoiceId = response.data.invoiceId;
         navigate(`/${linkId}/i/${invoiceId}`, { 
-          state: { paymentData: response.data, selectedAmount: amount, linkTheme: linkInfo.theme } 
+          state: { 
+            paymentData: response.data, 
+            selectedAmount: amount, 
+            linkTheme: linkInfo.theme 
+          } 
         });
       } else {
         setError(response.data.error || "Failed to generate invoice");
@@ -87,7 +106,7 @@ const AmountSelectionPage = () => {
     }
   };
 
-  // থিম কনফিগারেশন (Light বনাম Green)
+  // থিম কনফিগারেশন
   const isGreenTheme = linkInfo.theme === 'green';
   
   const pageBgClass = isGreenTheme ? 'bg-[#00D54B]' : 'bg-[#f4f4f4]';
@@ -155,7 +174,7 @@ const AmountSelectionPage = () => {
 
       {/* Bottom Pay Button Section */}
       <div className="w-full max-w-[360px] mt-2">
-        {error && <p className="text-red-200 text-xs text-center font-bold mb-2">{error}</p>}
+        {error && <p className="text-red-500 text-xs text-center font-bold mb-2">{error}</p>}
         
         <button
           onClick={handlePayNow}

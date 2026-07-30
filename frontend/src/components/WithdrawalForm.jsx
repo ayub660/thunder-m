@@ -28,18 +28,55 @@ export function WithdrawalForm({ onSuccess }) {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
 
-  // API base url
-  const API_URL = import.meta.env.MODE === 'production' ? 'https://thunder-m.vercel.app' : 'http://localhost:5000';
+  const API_URL = import.meta.env.MODE === 'production' 
+    ? 'https://thunder-m.vercel.app' 
+    : 'http://localhost:5000';
+
+  // লগইন ইউজারের তথ্য
+  const getAuth = () => {
+    let email = localStorage.getItem('userEmail') || localStorage.getItem('email') || '';
+    let role = localStorage.getItem('role') || localStorage.getItem('userRole') || '';
+    let userId = localStorage.getItem('userId') || localStorage.getItem('id') || '';
+    let name = localStorage.getItem('userName') || localStorage.getItem('name') || 'User';
+
+    try {
+      const raw = localStorage.getItem('userInfo') || localStorage.getItem('user');
+      if (raw) {
+        const u = JSON.parse(raw);
+        if (!email) email = u.email || '';
+        if (!role) role = u.role || '';
+        if (!userId) userId = (u.id || u._id || u.userId || '').toString();
+        if (!name || name === 'User') name = u.name || 'User';
+      }
+    } catch (e) {}
+
+    return { email, role, userId, name };
+  };
 
   const fetchData = async () => {
     try {
       setHistoryLoading(true);
-      
-      const balanceRes = await axios.get(`${API_URL}/api/balance`);
-      setBalance(balanceRes.data.balance || 0);
+      const { email, role, userId } = getAuth();
 
-      const historyRes = await axios.get(`${API_URL}/api/my-withdrawals`);
-      const withdrawalsList = Array.isArray(historyRes.data) ? historyRes.data : (historyRes.data.withdrawals || []);
+      if (!email) {
+        setError("Please login first");
+        setHistoryLoading(false);
+        return;
+      }
+
+      // Balance (userEmail সহ)
+      const balanceRes = await axios.get(`${API_URL}/api/balance`, {
+        params: { email, userEmail: email, role, userId }
+      });
+      setBalance(Number(balanceRes.data.balance) || 0);
+
+      // My Withdrawals (userEmail সহ)
+      const historyRes = await axios.get(`${API_URL}/api/my-withdrawals`, {
+        params: { userEmail: email, email, role }
+      });
+      const withdrawalsList = Array.isArray(historyRes.data) 
+        ? historyRes.data 
+        : (historyRes.data.withdrawals || []);
       setMyWithdrawals(withdrawalsList);
 
       let withdrawnTotal = 0;
@@ -47,7 +84,7 @@ export function WithdrawalForm({ onSuccess }) {
 
       withdrawalsList.forEach(item => {
         const amt = Number(item.originalAmount || item.amount || 0);
-        const status = item.status ? item.status.toLowerCase() : 'pending';
+        const status = (item.status || 'pending').toLowerCase();
 
         if (status === 'paid' || status === 'approved') {
           withdrawnTotal += amt;
@@ -77,6 +114,7 @@ export function WithdrawalForm({ onSuccess }) {
     setSuccessMsg(null);
     
     const n = Number(amount);
+    const { email, name, userId } = getAuth();
 
     if (n <= 0) {
       setError("Please enter a valid amount");
@@ -88,9 +126,21 @@ export function WithdrawalForm({ onSuccess }) {
       return;
     }
 
+    if (!email) {
+      setError("Please login first");
+      return;
+    }
+
     setLoading(true);
     try {
-      await axios.post(`${API_URL}/api/withdraw`, { amount: n });
+      // userEmail, userName সহ পাঠানো
+      await axios.post(`${API_URL}/api/withdraw`, { 
+        amount: n,
+        userEmail: email,
+        userName: name,
+        userId: userId || null,
+        payoutMethod: 'Bank Transfer'
+      });
       
       const formattedAmount = formatCurrency(n);
       setSuccessMsg(`Withdrawal request of ${formattedAmount} submitted successfully!`);
@@ -99,9 +149,7 @@ export function WithdrawalForm({ onSuccess }) {
       setShowModal(false);
       fetchData();
 
-      if (onSuccess) {
-        onSuccess();
-      }
+      if (onSuccess) onSuccess();
     } catch (err) {
       setError(err.response?.data?.message || "Something went wrong");
     } finally {
@@ -142,16 +190,12 @@ export function WithdrawalForm({ onSuccess }) {
   return (
     <div className="w-full min-h-screen bg-[#F8F9FA] px-2 md:px-4 py-6 space-y-8 font-sans text-gray-900">
       
-      {/* PAge hearder */}
       <div className="w-full">
         <h1 className="text-3xl font-extrabold tracking-tight text-gray-900">Withdrawals</h1>
         <p className="text-sm text-gray-500 mt-1">Manage withdrawal requests</p>
       </div>
 
-      {/* Balance card section*/}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full">
-        
-        {/* Available Balance Card */}
         <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm flex flex-col justify-between w-full">
           <div>
             <p className="text-[11px] font-bold text-gray-400 tracking-wider">AVAILABLE BALANCE</p>
@@ -171,7 +215,6 @@ export function WithdrawalForm({ onSuccess }) {
           </button>
         </div>
 
-        {/* Total Withdrawn Card */}
         <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm flex flex-col justify-between w-full">
           <div>
             <p className="text-[11px] font-bold text-gray-400 tracking-wider">TOTAL WITHDRAWN</p>
@@ -179,7 +222,6 @@ export function WithdrawalForm({ onSuccess }) {
           </div>
         </div>
 
-        {/* Pending Approval Card */}
         <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm flex flex-col justify-between w-full">
           <div>
             <p className="text-[11px] font-bold text-gray-400 tracking-wider">PENDING APPROVAL</p>
@@ -188,7 +230,6 @@ export function WithdrawalForm({ onSuccess }) {
         </div>
       </div>
 
-      
       <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm flex flex-wrap items-end gap-4 w-full">
         <div className="flex-1 min-w-[200px] space-y-1.5">
           <label className="text-[11px] font-bold uppercase tracking-wider text-gray-400">Search</label>
@@ -210,6 +251,7 @@ export function WithdrawalForm({ onSuccess }) {
             <option value="All">All</option>
             <option value="Pending">Pending</option>
             <option value="Approved">Approved</option>
+            <option value="Paid">Paid</option>
             <option value="Rejected">Rejected</option>
           </select>
         </div>
@@ -248,7 +290,6 @@ export function WithdrawalForm({ onSuccess }) {
         </div>
       </div>
 
-     
       <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm w-full">
         <h3 className="text-xl font-bold mb-6 text-gray-900">Payout History</h3>
         
@@ -256,14 +297,14 @@ export function WithdrawalForm({ onSuccess }) {
           <table className="w-full text-left text-sm">
             <thead className="text-[11px] text-gray-400 uppercase tracking-wider border-b border-gray-100">
               <tr>
-                <th scope="col" className="px-5 pb-4 font-bold">User</th>
-                <th scope="col" className="px-5 pb-4 font-bold">Amount</th>
-                <th scope="col" className="px-5 pb-4 font-bold">Original Amount</th>
-                <th scope="col" className="px-5 pb-4 font-bold">Type</th>
-                <th scope="col" className="px-5 pb-4 font-bold">Payout Method</th>
-                <th scope="col" className="px-5 pb-4 font-bold">Status</th>
-                <th scope="col" className="px-5 pb-4 font-bold">Request Time</th>
-                <th scope="col" className="px-5 pb-4 font-bold text-center">Action</th>
+                <th className="px-5 pb-4 font-bold">User</th>
+                <th className="px-5 pb-4 font-bold">Amount</th>
+                <th className="px-5 pb-4 font-bold">Original Amount</th>
+                <th className="px-5 pb-4 font-bold">Type</th>
+                <th className="px-5 pb-4 font-bold">Payout Method</th>
+                <th className="px-5 pb-4 font-bold">Status</th>
+                <th className="px-5 pb-4 font-bold">Request Time</th>
+                <th className="px-5 pb-4 font-bold text-center">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
@@ -278,14 +319,16 @@ export function WithdrawalForm({ onSuccess }) {
                       {item.user?.name || item.userName || item.name || 'N/A'}
                     </td>
                     <td className="px-5 py-4 font-extrabold text-gray-900">
-                      {item.amount?.toString().includes('BDT') ? item.amount : `BDT ${item.amount || 0}`}
+                      ${Number(item.amount || 0).toFixed(2)}
                     </td>
-                    <td className="px-5 py-4 text-gray-600 font-medium">${item.originalAmount || item.amount || 0}</td>
+                    <td className="px-5 py-4 text-gray-600 font-medium">
+                      ${item.originalAmount || item.amount || 0}
+                    </td>
                     <td className="px-5 py-4 text-gray-500 font-medium">{item.type || 'User Payout'}</td>
                     <td className="px-5 py-4 text-gray-500 font-medium">{item.payoutMethod || item.method || 'Bank Transfer'}</td>
                     <td className="px-5 py-4">
                       <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                        item.status === 'Approved' ? 'bg-emerald-50 text-emerald-600' :
+                        item.status === 'Paid' || item.status === 'Approved' ? 'bg-emerald-50 text-emerald-600' :
                         item.status === 'Rejected' ? 'bg-red-50 text-red-600' :
                         'bg-amber-50 text-amber-600'
                       }`}>
@@ -315,7 +358,6 @@ export function WithdrawalForm({ onSuccess }) {
         </div>
       </div>
 
-      
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm w-full h-full">
           <div className="bg-white rounded-3xl w-full max-w-lg p-8 shadow-2xl space-y-6 relative">
@@ -327,7 +369,9 @@ export function WithdrawalForm({ onSuccess }) {
                 </div>
                 <div>
                   <h3 className="text-xl font-bold text-gray-900">Request Payout</h3>
-                  <p className="text-xs text-gray-500 mt-0.5">Available Balance: <span className="font-bold text-gray-800">{formatCurrency(balance)}</span></p>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    Available Balance: <span className="font-bold text-gray-800">{formatCurrency(balance)}</span>
+                  </p>
                 </div>
               </div>
               <button 
@@ -340,7 +384,9 @@ export function WithdrawalForm({ onSuccess }) {
 
             <form onSubmit={submit} className="space-y-4 w-full">
               <div className="space-y-2">
-                <label className="text-[11px] font-bold uppercase tracking-wider text-gray-400">Amount to withdraw ($)</label>
+                <label className="text-[11px] font-bold uppercase tracking-wider text-gray-400">
+                  Amount to withdraw ($)
+                </label>
                 <input
                   type="number"
                   min="0"
@@ -385,11 +431,9 @@ export function WithdrawalForm({ onSuccess }) {
                 </button>
               </div>
             </form>
-
           </div>
         </div>
       )}
-
     </div>
   );
 }
