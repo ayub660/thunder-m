@@ -33,6 +33,13 @@ const AmountSelectionPage = () => {
             userEmail: response.data.userEmail || response.data.email || null,
             userId: response.data.userId || null
           });
+
+          // ★ লিংকে fixed amount থাকলে সেট করো
+          if (response.data.amount || response.data.defaultAmount || response.data.fixedAmount) {
+            const fixedAmt = response.data.amount || response.data.defaultAmount || response.data.fixedAmount;
+            setAmount(String(fixedAmt));
+          }
+
           document.title = response.data.name || linkId;
         }
       } catch (err) {
@@ -79,10 +86,10 @@ const AmountSelectionPage = () => {
     try {
       const response = await axios.post(`${API_URL}/api/generate-gateway-qr`, {
         linkId: linkId,
-        amount: amount,
+        amount: amount,                    // ★ সরাসরি keypad-এর amount
         buyerEmail: 'customer@example.com',
-        userEmail: linkInfo.userEmail,   // ← মালিকের ইমেইল
-        userId: linkInfo.userId,         // ← মালিকের userId
+        userEmail: linkInfo.userEmail,
+        userId: linkInfo.userId,
         currency: 'USD',
         orderId: 'ORDER-' + Date.now()
       });
@@ -92,7 +99,7 @@ const AmountSelectionPage = () => {
         navigate(`/${linkId}/i/${invoiceId}`, { 
           state: { 
             paymentData: response.data, 
-            selectedAmount: amount, 
+            selectedAmount: amount,        // ★ এখানে 50 পাঠাচ্ছে
             linkTheme: linkInfo.theme 
           } 
         });

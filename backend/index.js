@@ -133,12 +133,23 @@ app.post('/api/generate-gateway-qr', async (req, res) => {
             orderId 
         } = req.body;
 
+        // ★★★ Amount validation — ডিফল্ট 10 আর নেই ★★★
+        const parsedAmount = parseFloat(amount);
+        if (!amount || isNaN(parsedAmount) || parsedAmount <= 0) {
+            return res.status(400).json({
+                success: false,
+                error: 'Valid amount is required (must be greater than 0)'
+            });
+        }
+        const finalAmount = parsedAmount.toString();
+        const finalAmountNumber = parsedAmount;
+
         const btcpayUrl = process.env.BTCPAY_URL;
         const storeId = process.env.BTCPAY_STORE_ID;
         const apiKey = process.env.BTCPAY_API_KEY;
 
         const frontendDomain = process.env.FRONTEND_URL || "https://cash-app-pay.netlify.app";
-        const dynamicLinkId = linkId || 'pay';   // ← ডাইনামিক linkId
+        const dynamicLinkId = linkId || 'pay';
 
         // ========== FALLBACK MODE (BTCPay না থাকলে) ==========
         if (!btcpayUrl || !storeId || !apiKey) {
@@ -155,7 +166,7 @@ app.post('/api/generate-gateway-qr', async (req, res) => {
                         payId: fallbackLink,
                         lnInvoice: fallbackLink,
                         name: `Payment for ${linkId || 'Quick Invoice'}`,
-                        amount: Number(amount || 10),
+                        amount: finalAmountNumber,
                         currency: currency || 'USD',
                         status: "Pending",
                         checkoutLink: fallbackLink,
@@ -175,7 +186,7 @@ app.post('/api/generate-gateway-qr', async (req, res) => {
                 success: true,
                 invoiceId: fallbackInvoiceId,
                 checkoutLink: fallbackLink,
-                amount: amount || "10.00",
+                amount: finalAmount,
                 qrCodeUrl: qrCodeImageBase64,
                 bolt11: fallbackLink,
                 lightningInvoice: fallbackLink,
@@ -188,7 +199,7 @@ app.post('/api/generate-gateway-qr', async (req, res) => {
         const endpoint = `${normalizedBtcpayUrl}api/v1/stores/${storeId}/invoices`;
 
         const invoiceData = {
-            amount: (amount || "10.00").toString(),
+            amount: finalAmount,
             currency: currency || 'USD',
             paymentMethods: ["BTC-LightningNetwork", "BTC"], 
             metadata: {
@@ -294,7 +305,7 @@ app.post('/api/generate-gateway-qr', async (req, res) => {
                     payId: bolt11Invoice,      
                     lnInvoice: bolt11Invoice,    
                     name: `Payment for ${linkId || 'Quick Invoice'}`,
-                    amount: Number(amount || 10),
+                    amount: finalAmountNumber,
                     currency: currency || 'USD',
                     status: "Pending",
                     checkoutLink: checkoutLink,
@@ -314,7 +325,7 @@ app.post('/api/generate-gateway-qr', async (req, res) => {
             success: true,
             invoiceId: invoiceId,
             checkoutLink: checkoutLink,
-            amount: amount || "10.00",
+            amount: finalAmount,
             qrCodeUrl: qrCodeImageBase64,
             bolt11: bolt11Invoice,        
             lightningInvoice: bolt11Invoice,
@@ -588,6 +599,7 @@ app.get('/api/my-withdrawals', async (req, res) => {
     });
   }
 });
+
 
 // Admin Withdrawal List
 app.get('/api/admin/withdrawals', async (req, res) => {
@@ -1008,6 +1020,102 @@ app.put('/api/admin/update-password', async (req, res) => {
   } catch (error) {
     console.error("Update Password Error:", error);
     res.status(500).json({ success: false, message: "Server error while updating password" });
+  }
+});
+
+// ========== Get single transaction by invoiceId ==========
+app.get('/api/transactions/:invoiceId', async (req, res) => {
+  try {
+    const { invoiceId } = req.params;
+
+    const tx = await transactionsCollection.findOne({ invoiceId });
+
+    if (!tx) {
+      return res.status(404).json({
+        success: false,
+        error: 'Invoice not found'
+      });
+    }
+
+    // QR image আবার বানানো (DB-তে base64 না থাকলে)
+    let qrCodeUrl = tx.qrCodeUrl || null;
+    if (!qrCodeUrl && tx.checkoutLink) {
+      try {
+        qrCodeUrl = await QRCode.toDataURL(tx.checkoutLink, {
+          errorCorrectionLevel: 'M',
+          margin: 2
+        });
+      } catch (e) {
+        console.error('QR regen error:', e.message);
+      }
+    }
+
+    return res.json({
+      success: true,
+      transaction: {
+        ...tx,
+        qrCodeUrl,
+        bolt11: tx.bolt11 || tx.lnInvoice || tx.payId,
+        lightningInvoice: tx.bolt11 || tx.lnInvoice || tx.payId,
+        amount: tx.amount
+      }
+    });
+  } catch (error) {
+    console.error('Get transaction error:', error);
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+app.get('/:username', async (req, res) => {
+  try {
+    const { username } = req.params;
+    const userAgent = req.headers['user-agent'] || '';
+
+    // ফেসবুক বা মেসেঞ্জারের বট কি না চেক করা
+    const isSocialBot = /facebookexternalhit|Twitterbot|WhatsApp|TelegramBot|LinkedInBot|SkypeUriPreview/i.test(userAgent);
+
+    // ডাটাবেজ থেকে ওই ইউজারের পেমেন্ট লিংক বা প্রোফাইল ডাটা নিয়ে আসা
+    // (যেখানে তার ব্যানার বা থিমের ছবির লিংকটি সেভ করা আছে)
+    const userData = await usersCollection.findOne({ username: username }); 
+    // অথবা ট্রানজেকশন কালেকশন হলে: await transactionsCollection.findOne({ linkId: username });
+
+    if (isSocialBot) {
+      const formattedName = username.charAt(0).toUpperCase() + username.slice(1);
+      const title = `Pay ${formattedName}`;
+      const description = `Send secure payment instantly via Cash App.`;
+      
+      // ডাটাবেজে সেভ থাকা ইউজারের নির্দিষ্ট ব্যানার লিংক (সবুজ, সাদা বা থিম অনুযায়ী যেটি সে দিয়েছে)
+      // যদি ডাটাবেজে ছবি না থাকে, তবে ডিফল্ট একটি ছবি দেখাবে
+      const previewImageUrl = userData?.bannerUrl || userData?.imageUrl || `https://your-livesite.com/default-banner.jpg`;
+      const currentUrl = `https://your-livesite.com/${username}`;
+
+      return res.send(`
+        <!DOCTYPE html>
+        <html lang="en">
+          <head>
+            <meta charset="UTF-8">
+            <title>${title}</title>
+            <meta property="og:title" content="${title}" />
+            <meta property="og:description" content="${description}" />
+            <meta property="og:image" content="${previewImageUrl}" />
+            <meta property="og:url" content="${currentUrl}" />
+            <meta property="og:type" content="website" />
+            <meta name="twitter:card" content="summary_large_image" />
+          </head>
+          <body>
+            <script>
+              // ইউজার লিংকে ক্লিক করলে সরাসরি তার পেমেন্ট পেজে চলে যাবে
+              window.location.href = "https://your-livesite.com/" + "${username}";
+            </script>
+          </body>
+        </html>
+      `);
+    }
+
+    // সাধারণ ইউজার ব্রাউজারে আসলে মূল পেমেন্ট পেজ দেখাবে
+
+  } catch (error) {
+    console.error('Preview error:', error);
+    res.status(500).send('Server Error');
   }
 });
 

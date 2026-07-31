@@ -1,20 +1,20 @@
 import React, { useState, useEffect } from 'react';
-import { QrCode, Loader2, ExternalLink, Clock, CheckCircle2, AlertCircle, Zap, DollarSign } from "lucide-react";
+import { QrCode, Loader2, ExternalLink, Clock, CheckCircle2, AlertCircle, Zap, Copy, X } from "lucide-react";
 import { QRCodeSVG } from 'qrcode.react';
 import Swal from 'sweetalert2';
 
 export const CreateQrForm = () => {
   const [amount, setAmount] = useState("");
-  const [currentAmount, setCurrentAmount] = useState("8.00");
+  const [currentAmount, setCurrentAmount] = useState("");
   const [generatedLink, setGeneratedLink] = useState(null);
   const [lightningInvoice, setLightningInvoice] = useState(null);
   const [loading, setLoading] = useState(false);
   const [linkList, setLinkList] = useState([]);
 
-  // লোকাল ও লাইভ (Vercel) পরিবেশের জন্য ডায়নামিক API বেস URL
-  const API_URL = import.meta.env.MODE === 'production' ? 'https://thunder-m.vercel.app' : 'http://localhost:5000';
+  const API_URL = import.meta.env.MODE === 'production' 
+    ? 'https://thunder-m.vercel.app' 
+    : 'http://localhost:5000';
 
-  // ইউজার ইনফো নিরাপদে রিড করার হেল্পার ফাংশন
   const getCurrentUserInfo = () => {
     let storedUser = {};
     try {
@@ -38,7 +38,6 @@ export const CreateQrForm = () => {
     return { userId, userEmail, role };
   };
 
-  // ব্যাকএন্ড থেকে ডাইনামিক userId, email ও role সহ ট্রানজেকশন বা লিংক লিস্ট ফেচ করা
   const fetchLinks = () => {
     const { userId, userEmail, role } = getCurrentUserInfo();
 
@@ -55,21 +54,19 @@ export const CreateQrForm = () => {
     fetchLinks();
   }, []);
 
-  // ক্যাশঅ্যাপ ডিপ লিংক এবং লাইটনিং স্কিম রিডাইরেক্ট হ্যান্ডলার
   const handleCashAppRedirect = (invoiceStr) => {
     const targetInvoice = invoiceStr || lightningInvoice;
     
     if (targetInvoice && typeof targetInvoice === 'string') {
       if (targetInvoice.startsWith('lnbc')) {
-        const cashAppUrl = `https://cash.app/launch/lightning/${targetInvoice}`;
-        window.location.href = cashAppUrl;
+        window.location.href = `https://cash.app/launch/lightning/${targetInvoice}`;
       } else if (targetInvoice.includes('cash.app') || targetInvoice.startsWith('http')) {
         window.location.href = targetInvoice;
       } else {
         Swal.fire({
           icon: 'warning',
           title: 'Invalid Format',
-          text: 'The invoice format is not recognized for CashApp.',
+          text: 'Invoice format not recognized.',
           confirmButtonColor: '#00D54B'
         });
       }
@@ -85,11 +82,11 @@ export const CreateQrForm = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!amount) {
+    if (!amount || parseFloat(amount) <= 0) {
       Swal.fire({
         icon: 'warning',
         title: 'Required',
-        text: 'Please enter an amount',
+        text: 'Please enter a valid amount greater than 0',
         confirmButtonColor: '#00D54B',
       });
       return;
@@ -112,32 +109,42 @@ export const CreateQrForm = () => {
           userEmail: userEmail,
           userId: userId, 
           role: role,
-          linkId: 'pay'   // ← ডাইনামিক করতে চাইলে পরে change করবেন
+          linkId: 'pay'
         })
       });
 
       const data = await response.json();
 
-      if (data.success && (data.lightningInvoice || data.bolt11 || data.checkoutLink)) {
-        
-        // QR কোডের জন্য Lightning Invoice (lnbc...) ব্যবহার
+      if (data.success) {
         const lnInvoice = data.bolt11 || data.lightningInvoice || data.lnInvoice || '';
-        
-        // Copy / Pay App বাটনের জন্য webpage লিংক
-        const pageLink = data.checkoutLink || '';
+
+        const qrValue = (lnInvoice && lnInvoice.startsWith('lnbc')) 
+          ? `https://cash.app/launch/lightning/${lnInvoice}` 
+          : (data.checkoutLink || '');
+
+        if (!qrValue) {
+          Swal.fire({
+            icon: 'error',
+            title: 'No Invoice',
+            text: 'Server did not return a valid invoice. Check BTCPay config.',
+            confirmButtonColor: '#00D54B',
+          });
+          setLoading(false);
+          return;
+        }
 
         setCurrentAmount(amount);
-        setGeneratedLink(pageLink);
-        setLightningInvoice(lnInvoice || pageLink); // lnbc না থাকলে fallback হিসেবে pageLink
+        setGeneratedLink(data.checkoutLink || '');
+        setLightningInvoice(qrValue);
         fetchLinks();
         setAmount("");
         
         Swal.fire({
           icon: 'success',
           title: 'QR Generated!',
-          text: `Lightning QR generated for $${amount} successfully.`,
+          text: `Lightning QR generated for $${amount}`,
           confirmButtonColor: '#00D54B',
-          timer: 1500,
+          timer: 1400,
           showConfirmButton: false
         });
       } else {
@@ -165,7 +172,7 @@ export const CreateQrForm = () => {
     <div className="w-full">
       <div className="w-full space-y-6">
         
-        {/* পেজ হেডার */}
+        {/* Header */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white/90 backdrop-blur-md p-4 sm:p-5 rounded-2xl border border-gray-100 shadow-sm">
           <div>
             <div className="flex items-center gap-1.5 text-green-600 font-bold text-[11px] uppercase tracking-wider mb-0.5">
@@ -180,7 +187,7 @@ export const CreateQrForm = () => {
           </div>
         </div>
 
-        {/* ফর্ম সেকশন */}
+        {/* Form */}
         <div className="bg-white p-4 sm:p-6 md:p-8 rounded-2xl shadow-sm border border-gray-100/80 space-y-5">
           <div>
             <h2 className="text-lg font-bold text-gray-900">New Lightning Invoice</h2>
@@ -194,6 +201,8 @@ export const CreateQrForm = () => {
                 <span className="absolute left-4 top-3.5 text-gray-400 font-bold text-base">$</span>
                 <input 
                   type="number" 
+                  step="0.01"
+                  min="0.01"
                   value={amount}
                   onChange={(e) => setAmount(e.target.value)}
                   placeholder="0.00"
@@ -205,7 +214,7 @@ export const CreateQrForm = () => {
             <div>
               <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-2">Quick Amounts</p>
               <div className="flex gap-2 flex-wrap">
-                {['10', '30', '50', '100', '200', '500', '1000'].map(amt => (
+                {['5', '10', '20', '30', '50', '100', '200', '500', '1000'].map(amt => (
                   <button 
                     key={amt} 
                     type="button"
@@ -229,59 +238,75 @@ export const CreateQrForm = () => {
           </form>
         </div>
 
-        {/* QR কোড প্রিভিউ সেকশন */}
+        {/* CashApp Style QR Card */}
         {lightningInvoice && (
-          <div className="flex flex-col items-center justify-center bg-[#00D54B] p-6 sm:p-8 rounded-[2.5rem] shadow-xl text-white animate-in fade-in zoom-in duration-200">
-            <div className="w-full flex flex-col items-center max-w-xs">
-              <p className="text-[11px] font-extrabold tracking-widest uppercase opacity-90 mb-1">
-                SCAN OR TAP TO PAY
-              </p>
-              <h2 className="text-3xl font-black mb-4">
-                ${currentAmount}
-              </h2>
-
-              <div className="relative bg-white p-4 rounded-3xl shadow-2xl">
-                <div className="relative bg-white rounded-xl overflow-hidden flex justify-center">
-                  <QRCodeSVG 
-                    value={lightningInvoice} 
-                    size={180}
-                    bgColor={"#ffffff"}
-                    fgColor={"#000000"}
-                    level={"H"}
-                  />
-                </div>
-
-                <div className="absolute inset-0 m-auto w-10 h-10 bg-[#00D54B] rounded-xl flex items-center justify-center shadow-md border-2 border-white">
-                  <DollarSign className="w-5 h-5 text-white stroke-[3]" />
-                </div>
-              </div>
-
-              <p className="text-xs font-semibold tracking-wide opacity-95 mt-3 mb-4">
-                Waiting for payment.
-              </p>
+          <div className="w-full max-w-sm mx-auto mb-8 animate-in fade-in zoom-in duration-300">
+            <div className="bg-[#00D54B] rounded-[36px] shadow-2xl overflow-hidden flex flex-col items-center pt-8 pb-8 px-6 relative select-none">
               
-              <div className="flex flex-col sm:flex-row gap-2 w-full">
-                <button 
-                  onClick={() => {
-                    navigator.clipboard.writeText(generatedLink || lightningInvoice);
-                    Swal.fire({ icon: 'success', title: 'Copied!', text: 'Invoice copied to clipboard', timer: 1200, showConfirmButton: false, confirmButtonColor: '#00D54B' });
-                  }}
-                  className="flex-1 bg-white/20 hover:bg-white/30 text-white border border-white/30 py-2.5 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer backdrop-blur-sm"
-                >
-                  Copy Link
-                </button>
-                <button 
-                  onClick={() => handleCashAppRedirect(generatedLink || lightningInvoice)}
-                  className="flex-1 bg-black hover:bg-gray-900 text-white py-2.5 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-md cursor-pointer"
-                >
-                  Pay App <ExternalLink size={12} />
-                </button>
+              {/* Close Button */}
+              <button
+                onClick={() => {
+                  setLightningInvoice(null);
+                  setGeneratedLink(null);
+                  setCurrentAmount("");
+                }}
+                className="absolute top-5 left-5 text-white/80 hover:text-white bg-black/10 hover:bg-black/20 p-2 rounded-full transition-all cursor-pointer"
+                title="Create another"
+              >
+                <X size={20} strokeWidth={3} />
+              </button>
+
+              {/* Title & Amount */}
+              <p className="text-[14px] font-bold tracking-wider uppercase text-white mb-2 mt-4 opacity-95">
+                Scan or tap to pay
+              </p>
+              <h1 className="text-[52px] leading-none font-black text-white mb-8 tracking-tight">
+                ${currentAmount}
+              </h1>
+
+              {/* QR Code Container */}
+              <div className="relative bg-white rounded-[32px] shadow-2xl w-[260px] h-[260px] flex items-center justify-center overflow-hidden mb-8 p-4">
+                <QRCodeSVG
+                  value={lightningInvoice}
+                  size={230}
+                  bgColor="#ffffff"
+                  fgColor="#000000"
+                  level="M"
+                  includeMargin={false}
+                  style={{ imageRendering: 'crisp-edges' }}
+                />
+                
+                {/* Center Dollar Icon (CashApp Style) */}
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                  <div className="bg-[#00D54B] w-[64px] h-[64px] rounded-[18px] shadow-xl border-[4px] border-white flex items-center justify-center">
+                    <span className="text-white text-3xl font-black leading-none mt-1">$</span>
+                  </div>
+                </div>
               </div>
+
+              {/* Copy Button */}
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(lightningInvoice);
+                  Swal.fire({
+                    icon: "success",
+                    title: "Copied!",
+                    text: "Invoice copied to clipboard",
+                    timer: 1200,
+                    showConfirmButton: false,
+                    confirmButtonColor: "#00D54B",
+                  });
+                }}
+                className="w-full max-w-[260px] flex items-center justify-center gap-2.5 bg-white/20 hover:bg-white/30 text-white py-4 rounded-[20px] text-[15px] font-bold transition-all backdrop-blur-sm shadow-sm cursor-pointer"
+              >
+                <Copy size={18} strokeWidth={2.5} />
+                Copy Lightning Invoice
+              </button>
             </div>
           </div>
         )}
 
-        {/* পেমেন্ট হিস্ট্রি */}
+        {/* Payment History */}
         <div className="bg-white p-4 sm:p-6 md:p-8 rounded-2xl shadow-sm border border-gray-100">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mb-5">
             <div>
@@ -296,8 +321,8 @@ export const CreateQrForm = () => {
           <div className="space-y-3 max-h-[500px] overflow-y-auto pr-1">
             {linkList.length > 0 ? (
               linkList.map((item, index) => {
-                const itemLink = item.checkoutLink || item.lightningInvoice || item.bolt11 || '';
-                const isPaid = item.status === 'Paid' || item.status === 'Success';
+                const itemLink = item.bolt11 || item.lightningInvoice || item.lnInvoice || item.checkoutLink || '';
+                const isPaid = item.status === 'Paid' || item.status === 'Success' || item.status === 'Settled';
                 
                 return (
                   <div 
@@ -319,7 +344,7 @@ export const CreateQrForm = () => {
                         </span>
                       </div>
                       <p className="text-[11px] text-gray-500 font-mono truncate max-w-[250px] sm:max-w-md">
-                        {itemLink || 'No link'}
+                        {itemLink ? (itemLink.length > 40 ? itemLink.slice(0, 28) + '...' + itemLink.slice(-8) : itemLink) : 'No invoice'}
                       </p>
                       <p className="text-[10px] text-gray-400 flex items-center gap-1 font-medium">
                         <Clock size={10} /> {item.createdAt ? new Date(item.createdAt).toLocaleString() : 'Recent'}
@@ -331,7 +356,7 @@ export const CreateQrForm = () => {
                         onClick={() => handleCashAppRedirect(itemLink)}
                         className="w-full sm:w-auto px-3.5 py-1.5 bg-white border border-gray-200 group-hover:border-green-500 group-hover:text-green-600 text-gray-700 rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-1.5 shadow-sm cursor-pointer shrink-0"
                       >
-                        Pay App <ExternalLink size={12} />
+                        Open Cash App <ExternalLink size={12} />
                       </button>
                     )}
                   </div>

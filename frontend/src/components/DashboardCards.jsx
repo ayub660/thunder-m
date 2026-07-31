@@ -1,7 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { CreateQrForm } from './CreateQrForm';
-import { Wallet, Users, Coins, Receipt, TrendingUp, PiggyBank, ArrowDownToLine, Copy, Trash2, User, Check, Link as LinkIcon } from "lucide-react";
+import { 
+  Wallet, Users, Coins, Receipt, TrendingUp, PiggyBank, 
+  ArrowDownToLine, Copy, Trash2, User, Check, Link as LinkIcon, QrCode 
+} from "lucide-react";
+import { QRCodeSVG } from 'qrcode.react';
 import Swal from 'sweetalert2';
 
 import imgGreen from '../asset/cashapp_green.png';
@@ -10,9 +14,10 @@ import imgLight from '../asset/cashapp_light.png';
 export const DashboardCards = () => {
   const [paymentLinks, setPaymentLinks] = useState([]);
   const [linkIdInput, setLinkIdInput] = useState("");
-  const [amount, setAmount] = useState("10");
+  // ★ amount state সরানো হয়েছে — আর ডিফল্ট ১০ সেভ হবে না
   const [selectedDomain, setSelectedDomain] = useState(window.location.origin);
   const [newLinkTheme, setNewLinkTheme] = useState('light');
+  const [showQrFor, setShowQrFor] = useState(null);
 
   const [stats, setStats] = useState({
     balance: "$0.00",
@@ -22,7 +27,6 @@ export const DashboardCards = () => {
     totalWithdrawn: "$0.00"
   });
 
-  // ===== Sound related =====
   const [lastBalance, setLastBalance] = useState(null);
   const isFirstLoad = useRef(true);
 
@@ -30,7 +34,6 @@ export const DashboardCards = () => {
     ? 'https://thunder-m.vercel.app'
     : 'http://localhost:5000';
 
-  // ========== AUTH (কোনো default admin নেই) ==========
   const getAuth = () => {
     let email =
       localStorage.getItem('userEmail') ||
@@ -64,11 +67,6 @@ export const DashboardCards = () => {
 
   const { email: userEmail, role, userId } = getAuth();
 
-  const isMasterAdmin =
-    role === 'master_admin' ||
-    userEmail === 'admin@mamun.com';
-
-  // ===== Payment Sound =====
   const playPaymentSound = () => {
     try {
       const audio = new Audio('/sounds/cashapp.mp3');
@@ -85,7 +83,6 @@ export const DashboardCards = () => {
     fetchPaymentLinks();
     fetchStats();
 
-    // প্রতি ৫ সেকেন্ডে ব্যালেন্স চেক → নতুন পেমেন্ট এলে সাউন্ড
     const interval = setInterval(() => {
       fetchStats();
     }, 5000);
@@ -93,7 +90,6 @@ export const DashboardCards = () => {
     return () => clearInterval(interval);
   }, []);
 
-  // ========== FETCH PAYMENT LINKS ==========
   const fetchPaymentLinks = async () => {
     try {
       const { email, role, userId } = getAuth();
@@ -115,7 +111,6 @@ export const DashboardCards = () => {
 
       const allLinks = Array.isArray(response.data) ? response.data : [];
 
-      // Double safety filter on frontend
       const isMaster =
         role === 'master_admin' ||
         email === 'admin@mamun.com';
@@ -145,7 +140,6 @@ export const DashboardCards = () => {
     }
   };
 
-  // ========== FETCH STATS (Sound সহ) ==========
   const fetchStats = async () => {
     try {
       const { email, role, userId } = getAuth();
@@ -162,7 +156,6 @@ export const DashboardCards = () => {
       const data = response.data || {};
       const newBalance = Number(data.balance) || 0;
 
-      // প্রথম লোডে সাউন্ড বাজাবে না, শুধু ব্যালেন্স বাড়লে বাজাবে
       if (!isFirstLoad.current && lastBalance !== null && newBalance > lastBalance) {
         playPaymentSound();
       }
@@ -182,7 +175,6 @@ export const DashboardCards = () => {
     }
   };
 
-  // ========== THEME AUTO SAVE ==========
   const handleCardThemeChange = async (id, newTheme) => {
     setPaymentLinks((prev) =>
       prev.map((link) => {
@@ -213,7 +205,6 @@ export const DashboardCards = () => {
     }
   };
 
-  // ========== CREATE LINK ==========
   const handleCreateLink = async () => {
     if (!linkIdInput.trim()) {
       Swal.fire({
@@ -229,12 +220,12 @@ export const DashboardCards = () => {
     const trimmedId = linkIdInput.trim();
     const finalUrl = `${selectedDomain}/${trimmedId}`;
 
+    // ★ amount আর পাঠানো হচ্ছে না
     const newLinkData = {
       name: trimmedId,
       url: finalUrl,
       theme: newLinkTheme,
       template: newLinkTheme,
-      amount: amount,
       createdAt: new Date(),
       userEmail: email,
       email: email,
@@ -253,11 +244,12 @@ export const DashboardCards = () => {
 
       setPaymentLinks([createdItem, ...paymentLinks]);
       setLinkIdInput('');
+      setShowQrFor(createdItem._id);
 
       Swal.fire({
         icon: 'success',
         title: 'Success!',
-        text: 'Payment Link Created Successfully with selected theme!',
+        text: 'Payment Link + QR Created Successfully!',
         confirmButtonColor: '#00D54B'
       });
     } catch (error) {
@@ -271,7 +263,6 @@ export const DashboardCards = () => {
     }
   };
 
-  // ========== DELETE LINK ==========
   const handleDeleteLink = async (id) => {
     const result = await Swal.fire({
       title: 'Are you sure?',
@@ -296,6 +287,7 @@ export const DashboardCards = () => {
       });
 
       setPaymentLinks((prev) => prev.filter((link) => link._id !== id));
+      if (showQrFor === id) setShowQrFor(null);
 
       Swal.fire('Deleted!', 'Payment Link Deleted Successfully!', 'success');
     } catch (error) {
@@ -308,7 +300,6 @@ export const DashboardCards = () => {
     }
   };
 
-  // ========== SAVE SETTINGS ==========
   const handleSaveCardSettings = async (link) => {
     try {
       const currentLink = paymentLinks.find((l) => l._id === link._id) || link;
@@ -345,7 +336,6 @@ export const DashboardCards = () => {
       <div className="w-full max-w-[1400px] mx-auto space-y-3.5 box-border">
         <h1 className="text-lg sm:text-2xl font-bold text-gray-800 px-1">Dashboard</h1>
 
-        {/* Stats */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 sm:gap-3 w-full box-border">
           <StatCard title="AVAILABLE BALANCE" amount={stats.balance} icon={<Wallet className="text-green-500" size={18} />} />
           <StatCard title="MY OWN EARNINGS" amount={stats.myOwnEarnings} icon={<PiggyBank className="text-green-500" size={18} />} />
@@ -357,13 +347,13 @@ export const DashboardCards = () => {
         </div>
 
         <div className="flex flex-col lg:grid lg:grid-cols-2 gap-3.5 w-full items-start box-border">
-          {/* Left: QR Form */}
+          
           <div className="w-full bg-white rounded-2xl shadow-sm border border-gray-100 p-3.5 sm:p-5 box-border overflow-hidden">
             <CreateQrForm />
           </div>
 
-          {/* Right: Payment Links */}
           <div className="w-full space-y-3 box-border">
+            
             <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-2.5 bg-white p-3.5 rounded-2xl border border-gray-100 shadow-sm w-full box-border">
               <h2 className="text-sm font-bold text-gray-800">Payment Link</h2>
               <select
@@ -372,17 +362,19 @@ export const DashboardCards = () => {
                 className="w-full sm:w-auto px-3 py-2 bg-gray-50 border border-green-500 rounded-xl text-xs font-medium text-gray-700 outline-none focus:ring-2 focus:ring-green-100 cursor-pointer shadow-sm"
               >
                 <option value={window.location.origin}>{window.location.origin}</option>
-                <option value="https://www.payecash.app">https://www.2nddomain.app</option>
-                <option value="https://www.payin-cash.app">https://www.3rddomain.app</option>
+                <option value="https://www.payecash.app">https://www.payecash.app</option>
+                <option value="https://www.payin-cash.app">https://www.payin-cash.app</option>
               </select>
             </div>
 
             {paymentLinks.map((item) => {
               const currentLinkDisplay = `${selectedDomain}/${item.name}`;
               const isGreenTheme = item.theme === 'green';
+              const isQrOpen = showQrFor === item._id;
 
               return (
                 <div key={item._id} className="w-full bg-white p-3.5 rounded-2xl border border-gray-100 shadow-sm space-y-3 box-border overflow-hidden">
+                  
                   <div className="flex items-start justify-between gap-2.5">
                     <div className="flex items-center gap-2.5 min-w-0 flex-1">
                       <div className={`w-11 h-9 sm:w-12 sm:h-10 rounded-xl border flex items-center justify-center p-1 shadow-sm overflow-hidden flex-shrink-0 ${isGreenTheme ? 'bg-green-500' : 'bg-gray-100'}`}>
@@ -404,6 +396,18 @@ export const DashboardCards = () => {
                     </div>
 
                     <div className="flex items-center gap-1.5 flex-shrink-0">
+                      <button
+                        onClick={() => setShowQrFor(isQrOpen ? null : item._id)}
+                        className={`p-2 rounded-xl transition cursor-pointer ${
+                          isQrOpen 
+                            ? 'bg-green-500 text-white' 
+                            : 'bg-green-50 text-green-600 active:bg-green-100'
+                        }`}
+                        title="Show QR Code"
+                      >
+                        <QrCode size={14} />
+                      </button>
+
                       <button
                         onClick={() => {
                           navigator.clipboard.writeText(currentLinkDisplay);
@@ -464,11 +468,57 @@ export const DashboardCards = () => {
                       </button>
                     </div>
                   </div>
+
+                  {isQrOpen && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+                      <div className="bg-white rounded-2xl shadow-2xl w-[380px] overflow-hidden relative animate-in fade-in zoom-in duration-200">
+                        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+                          <p className="text-sm font-semibold text-gray-700">Payment Link QR</p>
+                          <button
+                            onClick={() => setShowQrFor(null)}
+                            className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-500 text-lg leading-none"
+                          >
+                            ×
+                          </button>
+                        </div>
+
+                        <div className="p-6 flex flex-col items-center">
+                          <div className="relative">
+                            <QRCodeSVG
+                              value={currentLinkDisplay}
+                              size={300}
+                              bgColor="#ffffff"
+                              fgColor="#000000"
+                              level="H"
+                              includeMargin={false}
+                            />
+
+                            <div className="absolute inset-0 m-auto w-[80px] h-[80px] flex items-center justify-center pointer-events-none">
+                              <svg 
+                                xmlns="http://www.w3.org/2000/svg" 
+                                viewBox="-9.6 -16 83.2 96" 
+                                className="w-[80px] h-[80px] drop-shadow-md"
+                              >
+                                <g fill="#FFF">
+                                  <path 
+                                    fill="#00D632" 
+                                    d="M41.7 0c6.4 0 9.6 0 13.1 1.1a13.6 13.6 0 018.1 8.1C64 12.7 64 15.9 64 22.31v19.37c0 6.42 0 9.64-1.1 13.1a13.6 13.6 0 01-8.1 8.1C51.3 64 48.1 64 41.7 64H22.3c-6.42 0-9.64 0-13.1-1.1a13.6 13.6 0 01-8.1-8.1C0 51.3 0 48.1 0 41.69V22.3c0-6.42 0-9.64 1.1-13.1a13.6 13.6 0 018.1-8.1C12.7 0 15.9 0 22.3 0z"
+                                  />
+                                  <path 
+                                    d="M42.47 23.8c.5.5 1.33.5 1.8 0l2.5-2.6c.53-.5.5-1.4-.06-1.94a19.73 19.73 0 00-6.72-3.84l.79-3.8c.17-.83-.45-1.61-1.28-1.61h-4.84a1.32 1.32 0 00-1.28 1.06l-.7 3.38c-6.44.33-11.9 3.6-11.9 10.3 0 5.8 4.51 8.29 9.28 10 4.51 1.72 6.9 2.36 6.9 4.78 0 2.49-2.38 3.95-5.9 3.95-3.2 0-6.56-1.07-9.16-3.68a1.3 1.3 0 00-1.84 0l-2.7 2.7a1.36 1.36 0 000 1.92c2.1 2.07 4.76 3.57 7.792 4.4l-.74 3.57c-.17.83.44 1.6 1.27 1.61l4.85.04a1.32 1.32 0 001.3-1.06l.7-3.39C40.28 49.07 45 44.8 45 38.57c0-5.74-4.7-8.16-10.4-10.13-3.26-1.21-6.08-2.04-6.08-4.53 0-2.42 2.63-3.38 5.27-3.38 3.36 0 6.59 1.39 8.7 3.29z"
+                                  />
+                                </g>
+                              </svg>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               );
             })}
 
-            {/* Create New Link */}
             <div className="w-full bg-white p-4 sm:p-6 rounded-2xl border border-gray-100 shadow-sm space-y-4 box-border">
               <div>
                 <label className="block text-[11px] font-bold text-gray-800 uppercase tracking-wider mb-1.5">
@@ -520,7 +570,7 @@ export const DashboardCards = () => {
                 onClick={handleCreateLink}
                 className="w-full bg-green-500 text-white py-3.5 rounded-xl font-bold active:bg-green-600 hover:bg-green-600 transition-all duration-300 shadow-lg shadow-green-100 cursor-pointer box-border text-sm"
               >
-                Create New Link
+                Create New Link + QR
               </button>
             </div>
           </div>
