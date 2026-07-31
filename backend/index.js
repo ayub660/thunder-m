@@ -1169,7 +1169,7 @@ app.get('/:username', async (req, res) => {
     res.status(500).send('Server Error');
   }
 });
-গুরুত্বপূর্ণ: /o
+
 
 // --- PAYMENT STATUS CHECK API ---
 app.get('/i/:linkId/status', async (req, res) => {
