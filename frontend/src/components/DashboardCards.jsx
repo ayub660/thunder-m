@@ -14,7 +14,6 @@ import imgLight from '../asset/cashapp_light.png';
 export const DashboardCards = () => {
   const [paymentLinks, setPaymentLinks] = useState([]);
   const [linkIdInput, setLinkIdInput] = useState("");
-  // ★ amount state সরানো হয়েছে — আর ডিফল্ট ১০ সেভ হবে না
   const [selectedDomain, setSelectedDomain] = useState(window.location.origin);
   const [newLinkTheme, setNewLinkTheme] = useState('light');
   const [showQrFor, setShowQrFor] = useState(null);
@@ -33,6 +32,9 @@ export const DashboardCards = () => {
   const API_URL = import.meta.env.MODE === 'production'
     ? 'https://thunder-m.vercel.app'
     : 'http://localhost:5000';
+
+  // ★ Share preview-এর জন্য backend domain (dynamic OG)
+  const SHARE_DOMAIN = 'https://thunder-m-r18p.vercel.app';
 
   const getAuth = () => {
     let email =
@@ -220,7 +222,6 @@ export const DashboardCards = () => {
     const trimmedId = linkIdInput.trim();
     const finalUrl = `${selectedDomain}/${trimmedId}`;
 
-    // ★ amount আর পাঠানো হচ্ছে না
     const newLinkData = {
       name: trimmedId,
       url: finalUrl,
@@ -369,6 +370,8 @@ export const DashboardCards = () => {
 
             {paymentLinks.map((item) => {
               const currentLinkDisplay = `${selectedDomain}/${item.name}`;
+              // ★ Dynamic share URL — Messenger/Facebook preview-এর জন্য
+              const shareUrl = `${SHARE_DOMAIN}/${item.name}`;
               const isGreenTheme = item.theme === 'green';
               const isQrOpen = showQrFor === item._id;
 
@@ -410,17 +413,17 @@ export const DashboardCards = () => {
 
                       <button
                         onClick={() => {
-                          navigator.clipboard.writeText(currentLinkDisplay);
+                          navigator.clipboard.writeText(shareUrl);
                           Swal.fire({
                             icon: 'success',
                             title: 'Copied!',
-                            text: 'Link Copied to clipboard!',
+                            text: 'Share link copied!',
                             timer: 1200,
                             showConfirmButton: false
                           });
                         }}
                         className="p-2 bg-green-50 active:bg-green-100 text-green-600 rounded-xl transition cursor-pointer"
-                        title="Copy Link"
+                        title="Copy Share Link"
                       >
                         <Copy size={14} />
                       </button>
@@ -485,7 +488,7 @@ export const DashboardCards = () => {
                         <div className="p-6 flex flex-col items-center">
                           <div className="relative">
                             <QRCodeSVG
-                              value={currentLinkDisplay}
+                              value={shareUrl}
                               size={300}
                               bgColor="#ffffff"
                               fgColor="#000000"

