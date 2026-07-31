@@ -1070,22 +1070,16 @@ app.get('/:username', async (req, res) => {
     const { username } = req.params;
     const userAgent = req.headers['user-agent'] || '';
 
-    // ফেসবুক বা মেসেঞ্জারের বট কি না চেক করা
     const isSocialBot = /facebookexternalhit|Twitterbot|WhatsApp|TelegramBot|LinkedInBot|SkypeUriPreview/i.test(userAgent);
 
-    // ডাটাবেজ থেকে ওই ইউজারের পেমেন্ট লিংক বা প্রোফাইল ডাটা নিয়ে আসা
-    // (যেখানে তার ব্যানার বা থিমের ছবির লিংকটি সেভ করা আছে)
     const userData = await usersCollection.findOne({ username: username }); 
-    // অথবা ট্রানজেকশন কালেকশন হলে: await transactionsCollection.findOne({ linkId: username });
 
     if (isSocialBot) {
       const formattedName = username.charAt(0).toUpperCase() + username.slice(1);
       const title = `Pay ${formattedName}`;
       const description = `Send secure payment instantly via Cash App.`;
       
-      // ডাটাবেজে সেভ থাকা ইউজারের নির্দিষ্ট ব্যানার লিংক (সবুজ, সাদা বা থিম অনুযায়ী যেটি সে দিয়েছে)
-      // যদি ডাটাবেজে ছবি না থাকে, তবে ডিফল্ট একটি ছবি দেখাবে
-      const previewImageUrl = userData?.bannerUrl || userData?.imageUrl || `https://your-livesite.com/default-banner.jpg`;
+      const previewImageUrl = userData?.bannerUrl || userData?.imageUrl || `https://cash-app-pay.netlify.app/default-banner.jpg`;
       const currentUrl = `https://cash-app-pay.netlify.app/${username}`;
 
       return res.send(`
@@ -1103,7 +1097,6 @@ app.get('/:username', async (req, res) => {
           </head>
           <body>
             <script>
-              // ইউজার লিংকে ক্লিক করলে সরাসরি তার পেমেন্ট পেজে চলে যাবে
               window.location.href = "https://cash-app-pay.netlify.app/" + "${username}";
             </script>
           </body>
@@ -1111,7 +1104,8 @@ app.get('/:username', async (req, res) => {
       `);
     }
 
-    // সাধারণ ইউজার ব্রাউজারে আসলে মূল পেমেন্ট পেজ দেখাবে
+    // ==== সাধারণ ইউজারদের জন্য এখানে রিডাইরেক্ট বসাতে হবে ====
+    return res.redirect(`https://cash-app-pay.netlify.app/${username}`);
 
   } catch (error) {
     console.error('Preview error:', error);
