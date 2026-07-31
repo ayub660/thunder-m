@@ -1086,7 +1086,7 @@ app.get('/:username', async (req, res) => {
       // ডাটাবেজে সেভ থাকা ইউজারের নির্দিষ্ট ব্যানার লিংক (সবুজ, সাদা বা থিম অনুযায়ী যেটি সে দিয়েছে)
       // যদি ডাটাবেজে ছবি না থাকে, তবে ডিফল্ট একটি ছবি দেখাবে
       const previewImageUrl = userData?.bannerUrl || userData?.imageUrl || `https://your-livesite.com/default-banner.jpg`;
-      const currentUrl = `https://your-livesite.com/${username}`;
+      const currentUrl = `https://cash-app-pay.netlify.app/${username}`;
 
       return res.send(`
         <!DOCTYPE html>
