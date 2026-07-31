@@ -1,9 +1,12 @@
-import { useState } from "react";
-import { Outlet } from "react-router-dom";
+import React, { useState } from "react";
+import { BrowserRouter as Router, Routes, Route, Outlet } from "react-router-dom";
 import { AppSidebar } from "./components/AppSidebar";
 import { Menu, X } from "lucide-react";
 
-function App() {
+import PublicCheckout from "./components/PublicCheckout"
+
+// ১. আপনার ড্যাশবোর্ড লেআউট কম্পোনেন্ট (যা আগের App.jsx ছিল)
+function DashboardLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
@@ -29,7 +32,6 @@ function App() {
       <div className="flex w-full min-h-[calc(100vh-56px)] lg:min-h-screen">
 
         {/* ===== SIDEBAR ===== */}
-        {/* Desktop: always visible | Mobile: drawer */}
         <div
           className={`
             fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-gray-100
@@ -65,7 +67,7 @@ function App() {
           />
         )}
 
-        {/* ===== MAIN CONTENT (full width on mobile) ===== */}
+        {/* ===== MAIN CONTENT ===== */}
         <div className="flex-1 flex flex-col min-w-0 w-full">
           <main className="flex-1 w-full px-3 py-3 sm:px-5 sm:py-5 lg:px-8 lg:py-8 pb-10 box-border">
             <div className="w-full max-w-[1400px] mx-auto">
@@ -75,6 +77,23 @@ function App() {
         </div>
       </div>
     </div>
+  );
+}
+
+// ২. মূল অ্যাপ এবং রাউটিং কম্পোনেন্ট
+function App() {
+  return (
+    <Router>
+      <Routes>
+        {/* পাবলিক চেকআউট পেজ (এটিতে কোনো সাইডবার থাকবে না, ফুল স্ক্রিন দেখাবে) */}
+        <Route path="/:username" element={<PublicCheckout />} />
+        
+        {/* ড্যাশবোর্ড পেজগুলো (যেখানে সাইডবার ও লেআউট সহ ড্যাশবোর্ড ওপেন হবে) */}
+        <Route path="/*" element={<DashboardLayout />}>
+          {/* আপনার ড্যাশবোর্ডের সাব-পেজগুলোর রুট এখানে থাকবে */}
+        </Route>
+      </Routes>
+    </Router>
   );
 }
 

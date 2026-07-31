@@ -7,6 +7,7 @@ import { router } from './router/router.jsx';
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
+    <HelmetProvider></HelmetProvider>
      <RouterProvider router={router} />
   </StrictMode>,
 )

