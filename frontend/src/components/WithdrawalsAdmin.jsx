@@ -7,32 +7,37 @@ export const WithdrawalsAdmin = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
   const [loading, setLoading] = useState(false);
-
-  // পেজিনেশনের জন্য স্টেট
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
 
-  const API_URL = import.meta.env.MODE === 'production' ? 'https://thunder-m.vercel.app' : 'http://localhost:5000';
+  const API_URL =
+    import.meta.env.MODE === 'production'
+      ? 'https://thunder-m.vercel.app'
+      : 'http://localhost:5000';
 
   const fetchWithdrawals = useCallback(async () => {
     try {
       setLoading(true);
       const token = localStorage.getItem('token') || localStorage.getItem('adminToken');
-      
+
       const res = await fetch(`${API_URL}/api/admin/withdrawals`, {
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
         }
       });
       const data = await res.json();
+
       if (Array.isArray(data)) {
         setWithdrawals(data);
-      } else if (data.withdrawals) {
+      } else if (data.withdrawals && Array.isArray(data.withdrawals)) {
         setWithdrawals(data.withdrawals);
+      } else {
+        setWithdrawals([]);
       }
     } catch (err) {
-      console.error("Error fetching withdrawals:", err);
+      console.error('Error fetching withdrawals:', err);
+      setWithdrawals([]);
     } finally {
       setLoading(false);
     }
@@ -42,18 +47,49 @@ export const WithdrawalsAdmin = () => {
     fetchWithdrawals();
   }, [fetchWithdrawals]);
 
+  // ইউজারের আসল available balance বের করা
+  const getUserAvailableBalance = async (userEmail) => {
+    try {
+      const res = await fetch(
+        `${API_URL}/api/balance?email=${encodeURIComponent(userEmail)}&role=master_admin`
+      );
+      const data = await res.json();
+      return Number(data.balance || 0);
+    } catch (err) {
+      console.error('Balance fetch error:', err);
+      return null;
+    }
+  };
+
   const handleUpdateStatus = async (id, newStatus, item) => {
-    // ইউজারের রিকোয়েস্টেড বা এভেইলেবল অ্যামাউন্ট চেক করার লজিক (Insufficient Balance Validation)
-    if (newStatus === 'Paid' && item) {
-      const requestedAmount = Number(item.originalAmount || item.amount || 0);
-      
+    const requestedAmount = Number(item?.originalAmount || item?.amount || 0);
+
+    // Pay করার আগে amount valid কি না
+    if (newStatus === 'Paid') {
       if (requestedAmount <= 0) {
-        Swal.fire({
+        return Swal.fire({
           icon: 'error',
-          title: 'Insufficient Balance!',
-          text: 'User does not have sufficient balance for this withdrawal.'
+          title: 'Invalid Amount!',
+          text: 'Withdrawal amount must be greater than 0.'
         });
-        return;
+      }
+
+      // আসল balance চেক (optional but correct)
+      const userEmail = item.userEmail || item.email;
+      if (userEmail) {
+        const available = await getUserAvailableBalance(userEmail);
+
+        // Pending withdrawal নিজেই hold করা — Paid করার সময় pending থেকে paid হয়
+        // তাই available + এই request amount >= request হলে OK
+        // (কারণ এই pending amount already deducted in available calc)
+        // Simple rule: if balance API fails, still allow admin to mark Paid
+        if (available !== null && available < 0) {
+          return Swal.fire({
+            icon: 'error',
+            title: 'Insufficient Balance!',
+            text: `User available balance is too low. Available: $${available.toFixed(2)}`
+          });
+        }
       }
     }
 
@@ -67,33 +103,33 @@ export const WithdrawalsAdmin = () => {
       confirmButtonText: `Yes, make it ${newStatus}!`
     });
 
-    if (result.isConfirmed) {
-      try {
-        const token = localStorage.getItem('token') || localStorage.getItem('adminToken');
-        const res = await fetch(`${API_URL}/api/admin/withdrawals/${id}`, {
-          method: 'PUT',
-          headers: { 
-            'Content-Type': 'application/json',
-            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-          },
-          body: JSON.stringify({ status: newStatus })
-        });
-        const data = await res.json();
+    if (!result.isConfirmed) return;
 
-        if (res.ok) {
-          Swal.fire('Success!', `Withdrawal marked as ${newStatus}`, 'success');
-          fetchWithdrawals(); 
-        } else {
-          Swal.fire('Failed!', data.message || 'Status update failed', 'error');
-        }
-      } catch (err) {
-        console.error(err);
-        Swal.fire('Error!', 'Server connection error!', 'error');
+    try {
+      const token = localStorage.getItem('token') || localStorage.getItem('adminToken');
+      const res = await fetch(`${API_URL}/api/admin/withdrawals/${id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({ status: newStatus })
+      });
+      const data = await res.json();
+
+      if (res.ok) {
+        Swal.fire('Success!', `Withdrawal marked as ${newStatus}`, 'success');
+        fetchWithdrawals();
+      } else {
+        Swal.fire('Failed!', data.message || 'Status update failed', 'error');
       }
+    } catch (err) {
+      console.error(err);
+      Swal.fire('Error!', 'Server connection error!', 'error');
     }
   };
 
-  const filteredWithdrawals = withdrawals.filter(item => {
+  const filteredWithdrawals = withdrawals.filter((item) => {
     const nameMatch = item.userName?.toLowerCase().includes(searchQuery.toLowerCase()) || false;
     const emailMatch = item.userEmail?.toLowerCase().includes(searchQuery.toLowerCase()) || false;
     const matchesSearch = nameMatch || emailMatch;
@@ -104,43 +140,58 @@ export const WithdrawalsAdmin = () => {
   const indexOfLastItem = currentPage * itemsPerPage;
   const indexOfFirstItem = indexOfLastItem - itemsPerPage;
   const currentWithdrawals = filteredWithdrawals.slice(indexOfFirstItem, indexOfLastItem);
-  const totalPages = Math.ceil(filteredWithdrawals.length / itemsPerPage);
+  const totalPages = Math.ceil(filteredWithdrawals.length / itemsPerPage) || 1;
 
   const totalPending = withdrawals
-    .filter(i => i.status === 'Pending' || !i.status)
+    .filter((i) => i.status === 'Pending' || !i.status)
     .reduce((acc, curr) => acc + Number(curr.originalAmount || curr.amount || 0), 0);
 
   const totalWithdrawn = withdrawals
-    .filter(i => i.status === 'Paid' || i.status === 'Approved')
+    .filter((i) => i.status === 'Paid' || i.status === 'Approved')
     .reduce((acc, curr) => acc + Number(curr.originalAmount || curr.amount || 0), 0);
 
-  const totalRequestsAmount = withdrawals
-    .reduce((acc, curr) => acc + Number(curr.originalAmount || curr.amount || 0), 0);
+  const totalRequestsAmount = withdrawals.reduce(
+    (acc, curr) => acc + Number(curr.originalAmount || curr.amount || 0),
+    0
+  );
 
   return (
     <div className="p-8 bg-gray-50/50 min-h-screen font-sans">
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Withdrawal Requests</h1>
-        <p className="text-xs text-gray-500 mt-1">Review user payment requests and banking/payout details from database.</p>
+        <p className="text-xs text-gray-500 mt-1">
+          Review user payment requests and banking/payout details from database.
+        </p>
       </div>
 
-      {/* পরিষ্কার লেবেল ও সাব-টেক্সটসহ ওভারভিউ কার্ডসমূহ */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
         <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
-          <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">Total Requested Amount</p>
-          <h3 className="text-3xl font-black text-gray-900 mt-2">${totalRequestsAmount.toLocaleString()}</h3>
+          <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">
+            Total Requested Amount
+          </p>
+          <h3 className="text-3xl font-black text-gray-900 mt-2">
+            ${totalRequestsAmount.toLocaleString()}
+          </h3>
           <p className="text-[11px] text-gray-400 mt-1">Total amount requested by users</p>
         </div>
 
         <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
-          <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">Total Paid / Approved</p>
-          <h3 className="text-3xl font-black text-green-600 mt-2">${totalWithdrawn.toLocaleString()}</h3>
+          <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">
+            Total Paid / Approved
+          </p>
+          <h3 className="text-3xl font-black text-green-600 mt-2">
+            ${totalWithdrawn.toLocaleString()}
+          </h3>
           <p className="text-[11px] text-gray-400 mt-1">Successfully paid out to users</p>
         </div>
 
         <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
-          <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">Pending Approval</p>
-          <h3 className="text-3xl font-black text-amber-500 mt-2">${totalPending.toLocaleString()}</h3>
+          <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">
+            Pending Approval
+          </p>
+          <h3 className="text-3xl font-black text-amber-500 mt-2">
+            ${totalPending.toLocaleString()}
+          </h3>
           <p className="text-[11px] text-gray-400 mt-1">Amount awaiting payment review</p>
         </div>
       </div>
@@ -148,9 +199,9 @@ export const WithdrawalsAdmin = () => {
       <div className="bg-white p-4 rounded-3xl border border-gray-100 shadow-sm mb-6 flex flex-col md:flex-row gap-4 items-center justify-between">
         <div className="relative w-full md:w-96">
           <Search className="absolute left-4 top-3.5 text-gray-400" size={18} />
-          <input 
-            type="text" 
-            placeholder="Search by name or email..." 
+          <input
+            type="text"
+            placeholder="Search by name or email..."
             value={searchQuery}
             onChange={(e) => {
               setSearchQuery(e.target.value);
@@ -162,8 +213,8 @@ export const WithdrawalsAdmin = () => {
 
         <div className="flex items-center gap-2 w-full md:w-auto">
           <Filter size={18} className="text-gray-400 shrink-0" />
-          <select 
-            value={statusFilter} 
+          <select
+            value={statusFilter}
             onChange={(e) => {
               setStatusFilter(e.target.value);
               setCurrentPage(1);
@@ -202,13 +253,15 @@ export const WithdrawalsAdmin = () => {
               ) : currentWithdrawals.length > 0 ? (
                 currentWithdrawals.map((item) => {
                   const usdAmount = Number(item.originalAmount || item.amount || 0);
-                  const userRate = Number(item.exchangeRate || item.rate || 120);
+                  const userRate = Number(item.exchangeRate || item.rate || item.dollarRate || 120);
                   const bdtAmount = usdAmount * userRate;
 
                   return (
                     <tr key={item._id || item.id} className="hover:bg-gray-50/50 transition-colors">
                       <td className="p-5">
-                        <div className="font-bold text-gray-900">{item.userName || item.name || 'Unknown User'}</div>
+                        <div className="font-bold text-gray-900">
+                          {item.userName || item.name || 'Unknown User'}
+                        </div>
                         <div className="text-xs text-gray-400 flex items-center gap-1 mt-0.5">
                           <Mail size={12} /> {item.userEmail || item.email || 'No email provided'}
                         </div>
@@ -217,8 +270,15 @@ export const WithdrawalsAdmin = () => {
                       <td className="p-5">
                         <div className="font-extrabold text-gray-950">${usdAmount.toFixed(2)}</div>
                         <div className="text-xs text-emerald-600 font-semibold mt-0.5">
-                          BDT: {bdtAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} 
-                          <span className="text-[10px] text-gray-400 font-normal"> (Rate: {userRate})</span>
+                          BDT:{' '}
+                          {bdtAmount.toLocaleString(undefined, {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2
+                          })}
+                          <span className="text-[10px] text-gray-400 font-normal">
+                            {' '}
+                            (Rate: {userRate})
+                          </span>
                         </div>
                       </td>
 
@@ -228,30 +288,44 @@ export const WithdrawalsAdmin = () => {
                           {item.payoutMethod || item.method || 'Bank Transfer'}
                         </div>
                         <div className="text-xs font-semibold text-gray-600 mt-0.5 bg-gray-50 px-2 py-0.5 rounded-md inline-block border border-gray-200">
-                          {item.accountNumber || item.bankDetails || item.walletNumber || 'A/C: N/A'}
+                          {item.accountNumber ||
+                            item.bankDetails ||
+                            item.walletNumber ||
+                            'A/C: N/A'}
                         </div>
                       </td>
 
                       <td className="p-5">
-                        <span className={`inline-flex px-3 py-1 rounded-xl text-[11px] font-bold uppercase tracking-wider ${
-                          item.status === 'Paid' ? 'bg-green-50 text-green-600 border border-green-100' :
-                          item.status === 'Approved' ? 'bg-blue-50 text-blue-600 border border-blue-100' :
-                          item.status === 'Rejected' ? 'bg-red-50 text-red-600 border border-red-100' :
-                          'bg-amber-50 text-amber-600 border border-amber-100'
-                        }`}>
+                        <span
+                          className={`inline-flex px-3 py-1 rounded-xl text-[11px] font-bold uppercase tracking-wider ${
+                            item.status === 'Paid'
+                              ? 'bg-green-50 text-green-600 border border-green-100'
+                              : item.status === 'Approved'
+                              ? 'bg-blue-50 text-blue-600 border border-blue-100'
+                              : item.status === 'Rejected'
+                              ? 'bg-red-50 text-red-600 border border-red-100'
+                              : 'bg-amber-50 text-amber-600 border border-amber-100'
+                          }`}
+                        >
                           {item.status || 'Pending'}
                         </span>
                       </td>
 
                       <td className="p-5 text-gray-400 text-xs">
-                        {item.requestTime || item.createdAt ? new Date(item.requestTime || item.createdAt).toLocaleString() : 'N/A'}
+                        {item.createdAt
+                          ? new Date(item.createdAt).toLocaleString()
+                          : item.requestTime
+                          ? item.requestTime
+                          : 'N/A'}
                       </td>
 
                       <td className="p-5 text-center">
                         <div className="flex items-center justify-center gap-2">
                           {item.status !== 'Paid' ? (
-                            <button 
-                              onClick={() => handleUpdateStatus(item._id || item.id, 'Paid', item)}
+                            <button
+                              onClick={() =>
+                                handleUpdateStatus(item._id || item.id, 'Paid', item)
+                              }
                               className="bg-green-500 hover:bg-green-600 text-white px-3.5 py-2 rounded-xl font-bold text-xs shadow-md shadow-green-100 transition cursor-pointer flex items-center gap-1.5"
                             >
                               <CheckCircle size={14} /> Pay
@@ -281,11 +355,13 @@ export const WithdrawalsAdmin = () => {
         {!loading && filteredWithdrawals.length > itemsPerPage && (
           <div className="p-4 border-t border-gray-100 flex items-center justify-between">
             <span className="text-xs text-gray-500 font-medium">
-              Showing {indexOfFirstItem + 1} to {Math.min(indexOfLastItem, filteredWithdrawals.length)} of {filteredWithdrawals.length} entries
+              Showing {indexOfFirstItem + 1} to{' '}
+              {Math.min(indexOfLastItem, filteredWithdrawals.length)} of{' '}
+              {filteredWithdrawals.length} entries
             </span>
             <div className="flex gap-1">
-              <button 
-                onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+              <button
+                onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
                 disabled={currentPage === 1}
                 className="px-3 py-1.5 text-xs font-bold bg-gray-100 rounded-lg disabled:opacity-40 cursor-pointer"
               >
@@ -294,8 +370,8 @@ export const WithdrawalsAdmin = () => {
               <span className="px-3 py-1.5 text-xs font-bold text-gray-700">
                 Page {currentPage} of {totalPages}
               </span>
-              <button 
-                onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+              <button
+                onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
                 disabled={currentPage === totalPages}
                 className="px-3 py-1.5 text-xs font-bold bg-gray-100 rounded-lg disabled:opacity-40 cursor-pointer"
               >
@@ -308,3 +384,5 @@ export const WithdrawalsAdmin = () => {
     </div>
   );
 };
+
+export default WithdrawalsAdmin;
