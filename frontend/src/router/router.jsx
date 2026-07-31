@@ -89,7 +89,7 @@ export const router = createBrowserRouter([
     path: "/i/:invoiceId",
     element: <PublicCheckout />,
   },
-  // 1st page (Amount)
+  // 1st page (Amount) — সব user dynamic
   {
     path: "/:linkId",
     element: <AmountSelectionPage />,

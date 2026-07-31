@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { AlertTriangle, Wallet, CheckCircle2, Clock, Eye, Filter, Plus } from "lucide-react";
 
@@ -28,12 +28,14 @@ export function WithdrawalForm({ onSuccess }) {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
 
+  const [selectedWithdrawal, setSelectedWithdrawal] = useState(null);
+  const [showDetailsModal, setShowDetailsModal] = useState(false);
+
   const API_URL = import.meta.env.MODE === 'production' 
     ? 'https://thunder-m.vercel.app' 
     : 'http://localhost:5000';
 
-  // লগইন ইউজারের তথ্য
-  const getAuth = () => {
+  const getAuth = useCallback(() => {
     let email = localStorage.getItem('userEmail') || localStorage.getItem('email') || '';
     let role = localStorage.getItem('role') || localStorage.getItem('userRole') || '';
     let userId = localStorage.getItem('userId') || localStorage.getItem('id') || '';
@@ -48,14 +50,17 @@ export function WithdrawalForm({ onSuccess }) {
         if (!userId) userId = (u.id || u._id || u.userId || '').toString();
         if (!name || name === 'User') name = u.name || 'User';
       }
-    } catch (e) {}
+    } catch (e) {
+      console.error("Failed to parse user info from localStorage", e);
+    }
 
     return { email, role, userId, name };
-  };
+  }, []);
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     try {
       setHistoryLoading(true);
+      setError(null);
       const { email, role, userId } = getAuth();
 
       if (!email) {
@@ -64,16 +69,13 @@ export function WithdrawalForm({ onSuccess }) {
         return;
       }
 
-      // Balance (userEmail সহ)
-      const balanceRes = await axios.get(`${API_URL}/api/balance`, {
-        params: { email, userEmail: email, role, userId }
-      });
+      const [balanceRes, historyRes] = await Promise.all([
+        axios.get(`${API_URL}/api/balance`, { params: { email, role, userId } }),
+        axios.get(`${API_URL}/api/my-withdrawals`, { params: { userEmail: email, email, role } })
+      ]);
+
       setBalance(Number(balanceRes.data.balance) || 0);
 
-      // My Withdrawals (userEmail সহ)
-      const historyRes = await axios.get(`${API_URL}/api/my-withdrawals`, {
-        params: { userEmail: email, email, role }
-      });
       const withdrawalsList = Array.isArray(historyRes.data) 
         ? historyRes.data 
         : (historyRes.data.withdrawals || []);
@@ -98,15 +100,15 @@ export function WithdrawalForm({ onSuccess }) {
 
     } catch (err) {
       console.error("Error fetching data:", err);
-      setError("Failed to load data");
+      setError("Failed to load data from server");
     } finally {
       setHistoryLoading(false);
     }
-  };
+  }, [API_URL, getAuth]);
 
   useEffect(() => {
     fetchData();
-  }, [API_URL]);
+  }, [fetchData]);
 
   const submit = async (e) => {
     e.preventDefault();
@@ -133,7 +135,6 @@ export function WithdrawalForm({ onSuccess }) {
 
     setLoading(true);
     try {
-      // userEmail, userName সহ পাঠানো
       await axios.post(`${API_URL}/api/withdraw`, { 
         amount: n,
         userEmail: email,
@@ -151,7 +152,7 @@ export function WithdrawalForm({ onSuccess }) {
 
       if (onSuccess) onSuccess();
     } catch (err) {
-      setError(err.response?.data?.message || "Something went wrong");
+      setError(err.response?.data?.message || "Something went wrong during submission");
     } finally {
       setLoading(false);
     }
@@ -339,7 +340,13 @@ export function WithdrawalForm({ onSuccess }) {
                       {item.requestTime || item.createdAt ? new Date(item.requestTime || item.createdAt).toLocaleString() : 'N/A'}
                     </td>
                     <td className="px-5 py-4 text-center">
-                      <button className="text-gray-400 hover:text-[#00E676] p-1.5 rounded-lg hover:bg-gray-100 cursor-pointer transition-colors">
+                      <button 
+                        onClick={() => {
+                          setSelectedWithdrawal(item);
+                          setShowDetailsModal(true);
+                        }}
+                        className="text-gray-400 hover:text-[#00E676] p-1.5 rounded-lg hover:bg-gray-100 cursor-pointer transition-colors"
+                      >
                         <Eye size={18} />
                       </button>
                     </td>
@@ -431,6 +438,28 @@ export function WithdrawalForm({ onSuccess }) {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {showDetailsModal && selectedWithdrawal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm w-full h-full">
+          <div className="bg-white rounded-3xl w-full max-w-md p-6 shadow-2xl space-y-4">
+            <h3 className="text-lg font-bold text-gray-900">Withdrawal Details</h3>
+            <div className="space-y-2 text-sm text-gray-600">
+              <p><strong>ID:</strong> {selectedWithdrawal._id || selectedWithdrawal.id}</p>
+              <p><strong>Name:</strong> {selectedWithdrawal.userName || selectedWithdrawal.name}</p>
+              <p><strong>Amount:</strong> ${selectedWithdrawal.amount}</p>
+              <p><strong>Status:</strong> {selectedWithdrawal.status}</p>
+              <p><strong>Method:</strong> {selectedWithdrawal.payoutMethod || 'Bank Transfer'}</p>
+              <p><strong>Date:</strong> {new Date(selectedWithdrawal.requestTime || selectedWithdrawal.createdAt).toLocaleString()}</p>
+            </div>
+            <button 
+              onClick={() => setShowDetailsModal(false)}
+              className="w-full py-3 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-xl font-bold mt-4 cursor-pointer"
+            >
+              Close
+            </button>
           </div>
         </div>
       )}

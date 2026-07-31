@@ -664,6 +664,203 @@ app.put('/api/admin/withdrawals/:id', async (req, res) => {
   }
 });
 
+// Admin Users Summary & Total Earnings Route
+app.get('/api/admin/users', async (req, res) => {
+  try {
+    const { role, userId } = req.query;
+    let query = {};
+
+    if (role === 'master_admin' || role === 'master' || role === 'admin') {
+      query = {};
+    } else if (userId && ObjectId.isValid(userId)) {
+      const uId = new ObjectId(userId);
+      query = { $or: [{ _id: uId }, { createdBy: uId }] };
+    }
+
+    const users = await usersCollection.aggregate([
+      { $match: query },
+      {
+        $lookup: {
+          from: 'transactions',
+          let: { uid: '$_id', uemail: '$email' },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $or: [
+                    { $eq: ['$userId', '$$uid'] },
+                    { $eq: ['$userEmail', '$$uemail'] }
+                  ]
+                }
+              }
+            },
+            {
+              $match: {
+                $expr: {
+                  $in: [
+                    { $toLower: { $ifNull: ['$status', ''] } },
+                    ['paid', 'success', 'settled', 'completed']
+                  ]
+                }
+              }
+            }
+          ],
+          as: 'paidTxs'
+        }
+      },
+      {
+        $lookup: {
+          from: 'withdrawals',
+          let: { uemail: '$email' },
+          pipeline: [
+            { $match: { $expr: { $eq: ['$userEmail', '$$uemail'] } } }
+          ],
+          as: 'userWds'
+        }
+      },
+      {
+        $addFields: {
+          totalEarnings: { $sum: '$paidTxs.amount' },
+          totalWithdrawn: {
+            $sum: {
+              $map: {
+                input: {
+                  $filter: {
+                    input: '$userWds',
+                    as: 'w',
+                    cond: {
+                      $in: [
+                        { $toLower: { $ifNull: ['$$w.status', 'pending'] } },
+                        ['paid', 'approved', 'pending']
+                      ]
+                    }
+                  }
+                },
+                as: 'w',
+                in: { $ifNull: ['$$w.amount', '$$w.originalAmount'] }
+              }
+            }
+          }
+        }
+      },
+      {
+        $addFields: {
+          totalAmount: {
+            $max: [
+              { $subtract: ['$totalEarnings', '$totalWithdrawn'] },
+              0
+            ]
+          }
+        }
+      },
+      {
+        $project: {
+          password: 0,
+          paidTxs: 0,
+          userWds: 0,
+          totalEarnings: 0,
+          totalWithdrawn: 0
+        }
+      }
+    ]).toArray();
+
+    res.status(200).json(users);
+  } catch (err) {
+    console.error('Fetch Users Error:', err);
+    res.status(500).json({ message: 'Server error', error: err.message });
+  }
+});
+//master admin withra korar route
+
+app.post('/api/withdrawals', async (req, res) => {
+  try {
+    const { userId, amount, email, name, userEmail, userName, payoutMethod } = req.body;
+
+    const finalEmail = email || userEmail;
+    const finalName = name || userName || 'User';
+    const withdrawAmount = Number(amount);
+
+    if (!withdrawAmount || withdrawAmount <= 0) {
+      return res.status(400).json({ success: false, message: 'Invalid withdrawal amount' });
+    }
+
+    if (!finalEmail) {
+      return res.status(400).json({ success: false, message: 'User email is required' });
+    }
+
+    // ইউজার খুঁজুন (native driver)
+    let user = null;
+    if (userId && ObjectId.isValid(userId)) {
+      user = await usersCollection.findOne({ _id: new ObjectId(userId) });
+    }
+    if (!user && finalEmail) {
+      user = await usersCollection.findOne({ email: finalEmail });
+    }
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    // ব্যালেন্স হিসাব (আপনার /api/withdraw এর মতোই)
+    const txQuery = { userEmail: user.email };
+    const transactions = await transactionsCollection.find(txQuery).toArray();
+    const withdrawals = await withdrawalsCollection.find(txQuery).toArray();
+
+    let totalEarnings = 0;
+    transactions.forEach(t => {
+      const status = (t.status || '').toLowerCase();
+      if (status === 'paid' || status === 'success' || status === 'settled') {
+        totalEarnings += Number(t.amount || 0);
+      }
+    });
+
+    let totalWithdrawn = 0;
+    let pendingWithdrawn = 0;
+    withdrawals.forEach(w => {
+      const status = (w.status || 'pending').toLowerCase();
+      const amt = Number(w.amount || w.originalAmount || 0);
+      if (status === 'paid' || status === 'approved') {
+        totalWithdrawn += amt;
+      } else if (status === 'pending') {
+        pendingWithdrawn += amt;
+      }
+    });
+
+    const available = totalEarnings - totalWithdrawn - pendingWithdrawn;
+
+    if (withdrawAmount > available) {
+      return res.status(400).json({
+        success: false,
+        message: `Insufficient funds. Available: $${available.toFixed(2)}`
+      });
+    }
+
+    // withdrawals কালেকশনে ইনসার্ট
+    const withdrawalRecord = {
+      userName: finalName,
+      userEmail: user.email,
+      userId: user._id,
+      amount: withdrawAmount,
+      originalAmount: withdrawAmount,
+      type: 'Admin Payout',
+      payoutMethod: payoutMethod || 'Admin Payout',
+      status: 'Pending',
+      requestTime: new Date().toLocaleString(),
+      createdAt: new Date()
+    };
+
+    await withdrawalsCollection.insertOne(withdrawalRecord);
+
+    res.status(200).json({
+      success: true,
+      message: 'Withdrawal request sent successfully',
+      withdrawnAmount: withdrawAmount
+    });
+
+  } catch (err) {
+    console.error('POST /api/withdrawals Error:', err);
+    res.status(500).json({ success: false, message: err.message || 'Server error' });
+  }
+});
 // --- 6. USER MANAGEMENT & CRUD API ---
 app.get('/api/me', async (req, res) => {
   try {
@@ -683,27 +880,69 @@ app.get('/api/admin/users', async (req, res) => {
     let query = {};
 
     if (role === 'master_admin' || role === 'master' || role === 'admin') {
-      query = {}; 
+      query = {};
     } else if (userId && ObjectId.isValid(userId)) {
       const uId = new ObjectId(userId);
-      query = { 
+      query = {
         $or: [
-          { _id: uId }, 
+          { _id: uId },
           { createdBy: uId }
-        ] 
+        ]
       };
     } else {
       query = {};
     }
 
-    const users = await usersCollection.find(query).project({ password: 0 }).toArray();
+    const users = await usersCollection.aggregate([
+      { $match: query },
+      {
+        $lookup: {
+          from: 'transactions',
+          let: { uid: '$_id', uemail: '$email' },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    {
+                      $or: [
+                        { $eq: ['$userId', '$$uid'] },
+                        { $eq: ['$userEmail', '$$uemail'] }
+                      ]
+                    },
+                    {
+                      $in: [
+                        { $toLower: { $ifNull: ['$status', ''] } },
+                        ['paid', 'success', 'settled', 'completed']
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          ],
+          as: 'paidTxs'
+        }
+      },
+      {
+        $addFields: {
+          totalAmount: { $sum: '$paidTxs.amount' }
+        }
+      },
+      {
+        $project: {
+          password: 0,
+          paidTxs: 0
+        }
+      }
+    ]).toArray();
+
     res.status(200).json(users);
   } catch (err) {
-    console.error("Fetch Users Error:", err);
-    res.status(500).json({ message: "Server error", error: err.message });
+    console.error('Fetch Users Error:', err);
+    res.status(500).json({ message: 'Server error', error: err.message });
   }
 });
-
 app.post('/api/admin/create-user', async (req, res) => {
   try {
     const { name, email, password, role, whatsapp, dollarRate, creatorRole, createdBy } = req.body;
