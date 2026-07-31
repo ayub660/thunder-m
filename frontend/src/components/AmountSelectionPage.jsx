@@ -33,13 +33,6 @@ const AmountSelectionPage = () => {
             userEmail: response.data.userEmail || response.data.email || null,
             userId: response.data.userId || null
           });
-
-          // ★ লিংকে fixed amount থাকলে সেট করো
-          if (response.data.amount || response.data.defaultAmount || response.data.fixedAmount) {
-            const fixedAmt = response.data.amount || response.data.defaultAmount || response.data.fixedAmount;
-            setAmount(String(fixedAmt));
-          }
-
           document.title = response.data.name || linkId;
         }
       } catch (err) {
@@ -84,9 +77,10 @@ const AmountSelectionPage = () => {
     setError('');
 
     try {
+      // ব্যাকএন্ডে ইউজারের টাইপ করা অ্যামাউন্ট পাঠানো হচ্ছে
       const response = await axios.post(`${API_URL}/api/generate-gateway-qr`, {
         linkId: linkId,
-        amount: amount,                    // ★ সরাসরি keypad-এর amount
+        amount: amount,                     // কিপ্যাডের টাইপ করা অ্যামাউন্ট
         buyerEmail: 'customer@example.com',
         userEmail: linkInfo.userEmail,
         userId: linkInfo.userId,
@@ -96,10 +90,11 @@ const AmountSelectionPage = () => {
 
       if (response.data.success && response.data.invoiceId) {
         const invoiceId = response.data.invoiceId;
+        // সফলভাবে ইনভয়েস তৈরি হলে স্ক্রিনশটের মতো পেজে রিডাইরেক্ট হবে
         navigate(`/${linkId}/i/${invoiceId}`, { 
           state: { 
             paymentData: response.data, 
-            selectedAmount: amount,        // ★ এখানে 50 পাঠাচ্ছে
+            selectedAmount: amount,       
             linkTheme: linkInfo.theme 
           } 
         });
@@ -114,7 +109,6 @@ const AmountSelectionPage = () => {
     }
   };
 
-  // থিম কনফিগারেশন
   const isGreenTheme = linkInfo.theme === 'green';
   
   const pageBgClass = isGreenTheme ? 'bg-[#00D54B]' : 'bg-[#f4f4f4]';

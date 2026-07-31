@@ -15,9 +15,13 @@ export const DashboardCards = () => {
   const [paymentLinks, setPaymentLinks] = useState([]);
   const [linkIdInput, setLinkIdInput] = useState("");
   
-  // ★ Netlify ডোমেইন ডিফল্ট এবং ফিক্সড করে দেওয়া হলো
+  // ★ Localhost + Netlify দুটোই সাপোর্ট
   const NETLIFY_DOMAIN = "https://cash-app-pay.netlify.app";
-  const [selectedDomain, setSelectedDomain] = useState(NETLIFY_DOMAIN);
+  const LOCAL_DOMAIN = "http://localhost:5173"; // Vite ডিফল্ট পোর্ট, প্রয়োজন হলে চেঞ্জ করো
+
+  const [selectedDomain, setSelectedDomain] = useState(
+    import.meta.env.MODE === 'production' ? NETLIFY_DOMAIN : LOCAL_DOMAIN
+  );
   
   const [newLinkTheme, setNewLinkTheme] = useState('light');
   const [showQrFor, setShowQrFor] = useState(null);
@@ -221,7 +225,7 @@ export const DashboardCards = () => {
 
     const { email, userId } = getAuth();
     const trimmedId = linkIdInput.trim();
-    const finalUrl = `${NETLIFY_DOMAIN}/${trimmedId}`;
+    const finalUrl = `${selectedDomain}/${trimmedId}`;   // ★ selectedDomain ব্যবহার
 
     const newLinkData = {
       name: trimmedId,
@@ -310,7 +314,7 @@ export const DashboardCards = () => {
         theme: currentLink.theme,
         template: currentLink.theme,
         name: currentLink.name,
-        url: `${NETLIFY_DOMAIN}/${currentLink.name}`
+        url: `${selectedDomain}/${currentLink.name}`   // ★ selectedDomain ব্যবহার
       });
 
       Swal.fire({
@@ -363,12 +367,13 @@ export const DashboardCards = () => {
                 onChange={(e) => setSelectedDomain(e.target.value)}
                 className="w-full sm:w-auto px-3 py-2 bg-gray-50 border border-green-500 rounded-xl text-xs font-medium text-gray-700 outline-none focus:ring-2 focus:ring-green-100 cursor-pointer shadow-sm"
               >
+                <option value={LOCAL_DOMAIN}>{LOCAL_DOMAIN}</option>
                 <option value={NETLIFY_DOMAIN}>{NETLIFY_DOMAIN}</option>
               </select>
             </div>
 
             {paymentLinks.map((item) => {
-              const currentLinkDisplay = `${NETLIFY_DOMAIN}/${item.name}`;
+              const currentLinkDisplay = `${selectedDomain}/${item.name}`;  // ★ selectedDomain ব্যবহার
               const isGreenTheme = item.theme === 'green';
               const isQrOpen = showQrFor === item._id;
 

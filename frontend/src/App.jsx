@@ -1,12 +1,9 @@
 import React, { useState } from "react";
-import { BrowserRouter as Router, Routes, Route, Outlet } from "react-router-dom";
+import { Outlet } from "react-router-dom";
 import { AppSidebar } from "./components/AppSidebar";
 import { Menu, X } from "lucide-react";
 
-import PublicCheckout from "./components/PublicCheckout"
-
-// ১. আপনার ড্যাশবোর্ড লেআউট কম্পোনেন্ট (যা আগের App.jsx ছিল)
-function DashboardLayout() {
+function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
@@ -77,23 +74,6 @@ function DashboardLayout() {
         </div>
       </div>
     </div>
-  );
-}
-
-// ২. মূল অ্যাপ এবং রাউটিং কম্পোনেন্ট
-function App() {
-  return (
-    <Router>
-      <Routes>
-        {/* পাবলিক চেকআউট পেজ (এটিতে কোনো সাইডবার থাকবে না, ফুল স্ক্রিন দেখাবে) */}
-        <Route path="/:username" element={<PublicCheckout />} />
-        
-        {/* ড্যাশবোর্ড পেজগুলো (যেখানে সাইডবার ও লেআউট সহ ড্যাশবোর্ড ওপেন হবে) */}
-        <Route path="/*" element={<DashboardLayout />}>
-          {/* আপনার ড্যাশবোর্ডের সাব-পেজগুলোর রুট এখানে থাকবে */}
-        </Route>
-      </Routes>
-    </Router>
   );
 }
 
