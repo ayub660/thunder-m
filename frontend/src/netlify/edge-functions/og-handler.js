@@ -2,17 +2,20 @@ export default async (request, context) => {
   const url = new URL(request.url);
   const path = url.pathname.replace(/^\//, '');
 
-  if (!path || path.includes('.') || path.startsWith('api')) {
+  // Static files, API, বা খালি path হলে সাধারণভাবে চলতে দিন
+  if (!path || path.includes('.') || path.startsWith('api') || path.startsWith('assets')) {
     return context.next();
   }
 
   const ua = request.headers.get('user-agent') || '';
-  const isBot = /facebookexternalhit|Facebot|Twitterbot|WhatsApp|TelegramBot|LinkedInBot|SkypeUriPreview|Slackbot|Discordbot/i.test(ua);
+  const isBot = /facebookexternalhit|Facebot|Twitterbot|WhatsApp|TelegramBot|LinkedInBot|SkypeUriPreview|Slackbot|Discordbot|Googlebot/i.test(ua);
 
+  // সাধারণ ইউজার হলে React অ্যাপ লোড হতে দিন
   if (!isBot) {
     return context.next();
   }
 
+  // Bot হলে OG HTML পাঠান
   const username = path.split('/')[0];
   const formattedName = username.charAt(0).toUpperCase() + username.slice(1);
 
@@ -25,8 +28,11 @@ export default async (request, context) => {
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>${title}</title>
   <meta name="description" content="${description}" />
+
+  <!-- Open Graph -->
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="CashApp Pay" />
   <meta property="og:title" content="${title}" />
@@ -36,17 +42,20 @@ export default async (request, context) => {
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
   <meta property="og:url" content="${currentUrl}" />
+
+  <!-- Twitter -->
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="${title}" />
   <meta name="twitter:description" content="${description}" />
   <meta name="twitter:image" content="${previewImageUrl}" />
 </head>
 <body>
-  <p>${title}</p>
+  <p>Loading payment for ${formattedName}...</p>
 </body>
 </html>`;
 
   return new Response(html, {
+    status: 200,
     headers: {
       'Content-Type': 'text/html; charset=utf-8',
       'Cache-Control': 'public, max-age=3600'
