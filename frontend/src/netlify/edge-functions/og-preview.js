@@ -18,7 +18,7 @@ export default async (request, context) => {
 
   const title = `Pay ${formattedName}`;
   const description = `Send secure payment instantly via Cash App.`;
-  const previewImageUrl = `https://thunder-m-r18p.vercel.app/og/${encodeURIComponent(username)}`;
+  const previewImageUrl = `https://thunder-m.vercel.app/og/${encodeURIComponent(username)}`;
   const currentUrl = `https://cash-app-pay.netlify.app/${username}`;
 
   const html = `<!DOCTYPE html>
