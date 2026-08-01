@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Search, Filter, Phone, Mail, UserCheck, Edit, Trash2, DollarSign, Send } from 'lucide-react';
 import Swal from 'sweetalert2';
-import { Pagination } from './Pagination'; // path ঠিক করে নাও যদি অন্য জায়গায় থাকে
+import { Pagination } from './Pagination';
 
 export const UserCreate = () => {
   const [users, setUsers] = useState([]);
@@ -68,8 +68,22 @@ export const UserCreate = () => {
         list = data.users;
       }
 
+      let filteredList = list;
+      if (isMasterAdmin) {
+        filteredList = list.filter(u => {
+          const isCreatedByMaster = 
+            String(u.createdBy) === String(currentUser.id) || 
+            u.creatorRole === 'master_admin' || 
+            u.creatorRole === 'admin';
+          
+          const isSubAdminUser = u.role === 'team_leader' || (u.createdBy && String(u.createdBy) !== String(currentUser.id));
+          
+          return !isSubAdminUser || isCreatedByMaster;
+        });
+      }
+
       const seen = new Set();
-      const uniqueUsers = list.filter((user) => {
+      const uniqueUsers = filteredList.filter((user) => {
         const uid = user?._id || user?.id;
         if (!uid) return true;
         const idStr = String(uid);
@@ -79,6 +93,10 @@ export const UserCreate = () => {
       });
 
       setUsers(uniqueUsers);
+
+      // কনসোলে সব ইউজারের ডাটা দেখার জন্য
+      // console.log("All user data(Users Data):", uniqueUsers);
+
     } catch (err) {
       console.error('Error fetching users:', err);
       setUsers([]);
@@ -89,7 +107,6 @@ export const UserCreate = () => {
     fetchUsers();
   }, []);
 
-  // Search/Filter বদলালে page 1-এ ফিরে যাবে
   useEffect(() => {
     setCurrentPage(1);
   }, [searchQuery, selectedUserName]);
@@ -255,10 +272,6 @@ export const UserCreate = () => {
       input: 'number',
       inputLabel: 'Enter Payout Amount ($)',
       inputPlaceholder: 'e.g. 50',
-      imageUrl: 'https://raw.githubusercontent.com/Tarikul-Islam-Anik/Animated-Fluent-Emojis/master/Emojis/Animals/Monkey%20Face.png',
-      imageWidth: 80,
-      imageHeight: 80,
-      imageAlt: 'Monkey Logo',
       showCancelButton: true,
       confirmButtonText: '💸 Send Request',
       cancelButtonText: 'Cancel',
@@ -299,10 +312,8 @@ export const UserCreate = () => {
       if (res.ok && data.success !== false) {
         Swal.fire({
           title: 'Request Sent Successfully!',
-          text: 'Withdrawal request has been submitted.',
-          imageUrl: 'https://raw.githubusercontent.com/Tarikul-Islam-Anik/Animated-Fluent-Emojis/master/Emojis/Animals/Monkey.png',
-          imageWidth: 70,
-          imageHeight: 70,
+          text: 'Withdrawal request has been submitted and balance updated.',
+          icon: 'success',
           buttonsStyling: false,
           customClass: {
             popup: 'rounded-3xl p-6 bg-white border border-gray-100 shadow-2xl',
@@ -525,106 +536,6 @@ export const UserCreate = () => {
         />
       </div>
 
-      {/* ========== MOBILE CARDS (< md) ========== */}
-      <div className="md:hidden space-y-3">
-        {paginatedUsers.length > 0 ? (
-          paginatedUsers.map((user, index) => {
-            const uniqueKey = `m-${user._id || user.id || 'user'}-${index}`;
-            const displayAmount = Number(
-              user.totalAmount ?? user.totalDollar ?? user.dollar ?? user.balance ?? 0
-            ).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
-            return (
-              <div
-                key={uniqueKey}
-                className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 space-y-3"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-10 h-10 bg-green-100 text-green-600 rounded-xl flex items-center justify-center font-bold text-sm shrink-0">
-                      {user.name ? user.name.charAt(0).toUpperCase() : 'U'}
-                    </div>
-                    <div className="min-w-0">
-                      <div className="font-bold text-gray-900 text-sm truncate">{user.name}</div>
-                      <div className="text-[10px] text-gray-400 truncate">
-                        ID: {(user._id || user.id || 'N/A').toString().slice(-8)}
-                      </div>
-                    </div>
-                  </div>
-                  <span
-                    className={`shrink-0 px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase ${
-                      user.role === 'team_leader'
-                        ? 'bg-green-50 text-green-600 border border-green-100'
-                        : user.role === 'master_admin'
-                        ? 'bg-purple-50 text-purple-600 border border-purple-100'
-                        : 'bg-blue-50 text-blue-600 border border-blue-100'
-                    }`}
-                  >
-                    {user.role}
-                  </span>
-                </div>
-
-                <div className="space-y-1.5 text-xs">
-                  <div className="flex items-center gap-2 text-gray-600">
-                    <Mail size={13} className="text-gray-400 shrink-0" />
-                    <span className="truncate">{user.email}</span>
-                  </div>
-                  <div className="flex items-center gap-2 text-gray-600">
-                    <Phone size={13} className="text-green-500 shrink-0" />
-                    <span>{user.whatsapp || 'N/A'}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <DollarSign size={13} className="text-emerald-600 shrink-0" />
-                    <span className="font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-lg text-xs">
-                      ${displayAmount}
-                    </span>
-                  </div>
-                </div>
-
-                {canManageUsers && (
-                  <div className="flex items-center gap-2 pt-1 border-t border-gray-50">
-                    <button
-                      onClick={() => handlePayUser(user)}
-                      className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-emerald-50 text-emerald-600 rounded-xl text-xs font-bold hover:bg-emerald-100 transition-colors cursor-pointer"
-                    >
-                      <Send size={13} /> Pay
-                    </button>
-                    <button
-                      onClick={() => handleOpenModal(user)}
-                      className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-blue-50 text-blue-600 rounded-xl text-xs font-bold hover:bg-blue-100 transition-colors cursor-pointer"
-                    >
-                      <Edit size={13} /> Edit
-                    </button>
-                    <button
-                      onClick={() => handleDeleteUser(user._id || user.id)}
-                      className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-red-50 text-red-600 rounded-xl text-xs font-bold hover:bg-red-100 transition-colors cursor-pointer"
-                    >
-                      <Trash2 size={13} /> Delete
-                    </button>
-                  </div>
-                )}
-              </div>
-            );
-          })
-        ) : (
-          <div className="bg-white rounded-2xl border border-gray-100 py-12 text-center text-gray-400">
-            <UserCheck size={30} className="mx-auto mb-2 opacity-30" />
-            <p className="font-medium text-xs">No users found matching your filter.</p>
-          </div>
-        )}
-
-        {/* Pagination - Mobile */}
-        <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
-          <Pagination
-            currentPage={currentPage}
-            totalPages={totalPages}
-            onPageChange={setCurrentPage}
-            itemsPerPage={itemsPerPage}
-            totalItems={filteredUsers.length}
-          />
-        </div>
-      </div>
-
       {/* Modal */}
       {isModalOpen && canManageUsers && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
@@ -715,25 +626,22 @@ export const UserCreate = () => {
                     <option value="team_leader">Team Leader</option>
                   )}
                 </select>
-                {isTeamLeader && (
-                  <p className="text-[10px] text-gray-400 mt-1">
-                    Team Leader can only create Single users.
-                  </p>
-                )}
               </div>
 
-              <div className="flex gap-3 pt-3">
+              <div className="flex items-center justify-end gap-2 pt-4">
                 <button
+                  type="button"
                   onClick={() => setIsModalOpen(false)}
-                  className="w-1/2 bg-gray-100 text-gray-600 py-3 rounded-xl font-bold hover:bg-gray-200 transition cursor-pointer text-xs sm:text-sm"
+                  className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-xl text-xs font-bold transition-all cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
+                  type="button"
                   onClick={handleSaveUser}
-                  className="w-1/2 bg-green-500 text-white py-3 rounded-xl font-bold hover:bg-green-600 transition shadow-md shadow-green-100 cursor-pointer text-xs sm:text-sm"
+                  className="px-5 py-2 bg-green-500 hover:bg-green-600 text-white rounded-xl text-xs font-bold shadow-md transition-all cursor-pointer"
                 >
-                  {editingUserId ? 'Update User' : 'Save User'}
+                  {editingUserId ? 'Update User' : 'Create User'}
                 </button>
               </div>
             </div>
@@ -743,5 +651,3 @@ export const UserCreate = () => {
     </div>
   );
 };
-
-export default UserCreate;

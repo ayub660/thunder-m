@@ -70,7 +70,6 @@ export function WithdrawalForm({ onSuccess }) {
         return;
       }
 
-      // ড্যাশবোর্ডের মতো একই এন্ডপয়েন্ট বা ফলব্যাক ব্যবহার করে সঠিক ব্যালেন্স ও ডেটা ফেচ করা
       const dashboardRes = await axios.get(`${API_URL}/api/dashboard`, { 
         headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
         params: { email, role, userId } 
@@ -394,10 +393,21 @@ export function WithdrawalForm({ onSuccess }) {
         </div>
       </div>
 
+      {/* ====================== WITHDRAWAL MODAL (Monkey Animation added) ====================== */}
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm w-full h-full">
-          <div className="bg-white rounded-3xl w-full max-w-lg p-8 shadow-2xl space-y-6 relative">
+          <div className="bg-white rounded-3xl w-full max-w-lg p-8 shadow-2xl space-y-6 relative overflow-hidden">
             
+            {/* Cute Monkey Animation */}
+            <div className="flex justify-center -mt-2 mb-1">
+              <div className="relative">
+                <div className="text-7xl animate-bounce select-none" style={{ animationDuration: '1.4s' }}>
+                  🐵
+                </div>
+                <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-10 h-2 bg-black/10 rounded-full blur-[2px] animate-pulse"></div>
+              </div>
+            </div>
+
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-4">
                 <div className="w-14 h-14 rounded-2xl bg-[#E8F8F0] flex items-center justify-center text-[#00C853]">

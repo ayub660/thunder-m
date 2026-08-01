@@ -402,6 +402,8 @@ app.post('/api/generate-gateway-qr', async (req, res) => {
   }
 });
 
+
+
 // ========== BALANCE ==========
 app.get('/api/balance', async (req, res) => {
   try {
@@ -446,10 +448,14 @@ app.get('/api/balance', async (req, res) => {
     let myWithdrawn = 0;
     let myPending = 0;
     myWithdrawals.forEach((w) => {
-      const st = (w.status || 'pending').toLowerCase();
+      const st = (w.status || 'pending').toLowerCase().trim();
       const amt = Number(w.amount || w.originalAmount || 0);
-      if (st === 'paid' || st === 'approved') myWithdrawn += amt;
-      else if (st === 'pending') myPending += amt;
+
+      if (['paid', 'approved', 'success', 'successful', 'completed', 'settled', 'confirmed'].includes(st)) {
+        myWithdrawn += amt;
+      } else {
+        myPending += amt;
+      }
     });
 
     let myBalance = myOwnEarnings - myWithdrawn - myPending;
@@ -524,25 +530,38 @@ app.get('/api/balance', async (req, res) => {
 
       teamTx.forEach((t) => {
         const amt = Number(t.amount || 0);
-        totalBillable += amt;
 
         if (isPaid(t.status)) {
           teamTotalEarnings += amt;
           totalSettled += 1;
+        } else {
+          totalBillable += amt; // Pending transactions
         }
       });
 
       teamWd.forEach((w) => {
-        const st = (w.status || 'pending').toLowerCase();
+        const st = (w.status || 'pending').toLowerCase().trim();
         const amt = Number(w.amount || w.originalAmount || 0);
-        if (st === 'paid' || st === 'approved') teamWithdrawn += amt;
-        else if (st === 'pending') teamPending += amt;
+
+        // Paid / Approved / Success / Completed / Settled → Withdrawn
+        if (['paid', 'approved', 'success', 'successful', 'completed', 'settled', 'confirmed'].includes(st)) {
+          teamWithdrawn += amt;
+        } else {
+          // Pending বা অন্য যেকোনো status
+          teamPending += amt;
+        }
       });
     }
 
-    // ★ AVAILABLE TEAM BALANCE = team earnings - withdrawn - pending
+    // ★ AVAILABLE TEAM BALANCE
     let availableTeamBalance = teamTotalEarnings - teamWithdrawn - teamPending;
     if (availableTeamBalance < 0) availableTeamBalance = 0;
+
+    // ★★★ MASTER ADMIN এর জন্য ★★★
+    // AVAILABLE TEAM BALANCE এবং TOTAL BILLABLE একই রাখব
+    if (isMasterUser) {
+      totalBillable = availableTeamBalance;
+    }
 
     const totalEarnings = isMasterUser
       ? teamTotalEarnings
@@ -553,13 +572,13 @@ app.get('/api/balance', async (req, res) => {
       : myWithdrawn + teamWithdrawn;
 
     res.json({
-      balance: myBalance,                    // Team Leader নিজের available
-      availableTeamBalance,                  // Team-এর available (withdraw বাদ)
+      balance: myBalance,
+      availableTeamBalance,
       totalBillable,
       totalSettled,
-      myOwnEarnings,                         // Team Leader নিজের total paid
-      teamTotalEarnings,                     // Team-এর total paid (withdraw আগে)
-      totalEarnings,                         // নিজের + team
+      myOwnEarnings,
+      teamTotalEarnings,
+      totalEarnings,
       totalWithdrawn,
       pendingWithdrawn: myPending
     });
@@ -818,20 +837,40 @@ app.post('/api/withdrawals', async (req, res) => {
       return res.status(400).json({ success: false, message: 'User email is required' });
     }
 
+    // 1. User খুঁজুন
     let user = null;
     if (userId && ObjectId.isValid(userId)) {
       user = await usersCollection.findOne({ _id: new ObjectId(userId) });
     }
     if (!user) user = await usersCollection.findOne({ email: finalEmail });
-    if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
 
-    const txQuery = { userEmail: user.email };
+    // 2. কোন কোন ইমেইলের ট্রানজেকশন হিসাব হবে সেটা বের করুন
+    let emailsToCheck = [user.email];
+
+    // যদি Team Leader হয়, তাহলে তার সব Worker-এর ইমেইলও যোগ করুন
+    if (user.role === 'team_leader') {
+      const workers = await usersCollection.find({
+        createdBy: user._id
+      }).toArray();
+
+      const workerEmails = workers.map(w => w.email).filter(Boolean);
+      emailsToCheck = [...emailsToCheck, ...workerEmails];
+    }
+
+    // 3. Transactions ও Withdrawals আনুন
+    const txQuery = { userEmail: { $in: emailsToCheck } };
     const transactions = await transactionsCollection.find(txQuery).toArray();
     const withdrawals = await withdrawalsCollection.find(txQuery).toArray();
 
+    // 4. Available Balance হিসাব
     let totalEarnings = 0;
     transactions.forEach((t) => {
-      if (isPaidStatus(t.status)) totalEarnings += Number(t.amount || 0);
+      if (isPaidStatus(t.status)) {
+        totalEarnings += Number(t.amount || 0);
+      }
     });
 
     let totalWithdrawn = 0;
@@ -839,11 +878,16 @@ app.post('/api/withdrawals', async (req, res) => {
     withdrawals.forEach((w) => {
       const status = (w.status || 'pending').toLowerCase();
       const amt = Number(w.amount || w.originalAmount || 0);
-      if (status === 'paid' || status === 'approved') totalWithdrawn += amt;
-      else if (status === 'pending') pendingWithdrawn += amt;
+
+      if (status === 'paid' || status === 'approved') {
+        totalWithdrawn += amt;
+      } else if (status === 'pending') {
+        pendingWithdrawn += amt;
+      }
     });
 
     const available = totalEarnings - totalWithdrawn - pendingWithdrawn;
+
     if (withdrawAmount > available) {
       return res.status(400).json({
         success: false,
@@ -851,6 +895,7 @@ app.post('/api/withdrawals', async (req, res) => {
       });
     }
 
+    // 5. Withdrawal রিকোয়েস্ট সেভ করুন
     await withdrawalsCollection.insertOne({
       userName: finalName,
       userEmail: user.email,
@@ -861,14 +906,18 @@ app.post('/api/withdrawals', async (req, res) => {
       payoutMethod: payoutMethod || 'Admin Payout',
       status: 'Pending',
       requestTime: new Date().toLocaleString(),
-      createdAt: new Date()
+      createdAt: new Date(),
+      // অতিরিক্ত তথ্য (ঐচ্ছিক)
+      calculatedFromEmails: emailsToCheck
     });
 
     res.status(200).json({
       success: true,
       message: 'Withdrawal request sent successfully',
-      withdrawnAmount: withdrawAmount
+      withdrawnAmount: withdrawAmount,
+      availableBefore: available
     });
+
   } catch (err) {
     console.error('POST /api/withdrawals Error:', err);
     res.status(500).json({ success: false, message: err.message || 'Server error' });
@@ -936,11 +985,47 @@ app.get('/api/admin/users', async (req, res) => {
     const { role, userId, email } = req.query;
     let query = {};
 
+    // ========== ১. Query তৈরি ==========
     if (isMaster(role, email)) {
-      // Master → সব user
-      query = {};
-    } else if (role === 'team_leader') {
-      // Team Leader → শুধু নিজের তৈরি করা user + নিজে
+      // Master এর _id বের করা
+      let masterId = null;
+      let masterIdStr = null;
+
+      if (userId && ObjectId.isValid(userId)) {
+        masterId = new ObjectId(userId);
+        masterIdStr = userId.toString();
+      } else if (email) {
+        const masterUser = await usersCollection.findOne({ email });
+        if (masterUser) {
+          masterId = masterUser._id;
+          masterIdStr = masterUser._id.toString();
+        }
+      }
+
+      // Master শুধু দেখবে:
+      // - MASTER_ADMIN
+      // - TEAM_LEADER
+      // - SINGLE যেগুলো Master নিজে তৈরি করেছে (বা createdBy নেই)
+      query = {
+        $or: [
+          { role: { $regex: /^(master_admin|team_leader)$/i } },
+          {
+            role: { $regex: /^single$/i },
+            $or: [
+              { createdBy: { $exists: false } },
+              { createdBy: null },
+              { createdBy: '' },
+              ...(masterId
+                ? [
+                    { createdBy: masterId },
+                    { createdBy: masterIdStr }
+                  ]
+                : [])
+            ]
+          }
+        ]
+      };
+    } else if (role && role.toLowerCase() === 'team_leader') {
       let leaderId = null;
       let leaderIdStr = null;
 
@@ -970,7 +1055,7 @@ app.get('/api/admin/users', async (req, res) => {
         query = { _id: null };
       }
     } else {
-      // সাধারণ user → শুধু নিজে
+      // Single বা অন্য রোল → শুধু নিজে
       if (userId && ObjectId.isValid(userId)) {
         query = { _id: new ObjectId(userId) };
       } else if (email) {
@@ -980,10 +1065,12 @@ app.get('/api/admin/users', async (req, res) => {
       }
     }
 
+    // ========== ২. Aggregation ==========
     const users = await usersCollection
       .aggregate([
         { $match: query },
-        // Paid transactions
+
+        // ১. নিজের Paid transactions
         {
           $lookup: {
             from: 'transactions',
@@ -1014,71 +1101,195 @@ app.get('/api/admin/users', async (req, res) => {
             as: 'paidTxs'
           }
         },
-        // All withdrawals of this user
+
+        // ২. টিম মেম্বার খুঁজে বের করা
         {
           $lookup: {
-            from: 'withdrawals',
-            let: { uemail: '$email' },
+            from: 'users',
+            let: { leaderId: '$_id', leaderIdStr: { $toString: '$_id' } },
             pipeline: [
               {
                 $match: {
-                  $expr: { $eq: ['$userEmail', '$$uemail'] }
+                  $expr: {
+                    $or: [
+                      { $eq: ['$createdBy', '$$leaderId'] },
+                      { $eq: ['$createdBy', '$$leaderIdStr'] }
+                    ]
+                  }
+                }
+              },
+              { $project: { email: 1, _id: 1 } }
+            ],
+            as: 'teamMembers'
+          }
+        },
+
+        // ৩. টিম মেম্বারদের Paid transactions
+        {
+          $lookup: {
+            from: 'transactions',
+            let: {
+              teamIds: '$teamMembers._id',
+              teamIdStrs: {
+                $map: {
+                  input: '$teamMembers._id',
+                  as: 'id',
+                  in: { $toString: '$$id' }
+                }
+              },
+              teamEmails: '$teamMembers.email'
+            },
+            pipeline: [
+              {
+                $match: {
+                  $expr: {
+                    $and: [
+                      {
+                        $or: [
+                          { $in: ['$userId', '$$teamIds'] },
+                          { $in: ['$userId', '$$teamIdStrs'] },
+                          { $in: ['$userEmail', '$$teamEmails'] }
+                        ]
+                      },
+                      {
+                        $in: [
+                          { $toLower: { $ifNull: ['$status', ''] } },
+                          ['paid', 'success', 'settled', 'completed']
+                        ]
+                      }
+                    ]
+                  }
                 }
               }
             ],
-            as: 'userWithdrawals'
+            as: 'teamPaidTxs'
           }
         },
+
+        // ৪. উইথড্রয়াল (নিজের + টিমের)
+        {
+          $lookup: {
+            from: 'withdrawals',
+            let: {
+              uemail: '$email',
+              teamEmails: '$teamMembers.email'
+            },
+            pipeline: [
+              {
+                $match: {
+                  $expr: {
+                    $or: [
+                      { $eq: ['$userEmail', '$$uemail'] },
+                      { $in: ['$userEmail', '$$teamEmails'] }
+                    ]
+                  }
+                }
+              }
+            ],
+            as: 'allWithdrawals'
+          }
+        },
+
+        // ৫. হিসাব করা
         {
           $addFields: {
-            totalEarnings: { $ifNull: [{ $sum: '$paidTxs.amount' }, 0] },
-            totalWithdrawn: {
+            myEarnings: { $ifNull: [{ $sum: '$paidTxs.amount' }, 0] },
+            teamEarnings: { $ifNull: [{ $sum: '$teamPaidTxs.amount' }, 0] },
+
+            // নিজের উইথড্র
+            ownWithdrawn: {
               $sum: {
                 $map: {
                   input: {
                     $filter: {
-                      input: '$userWithdrawals',
+                      input: '$allWithdrawals',
                       as: 'w',
                       cond: {
-                        $in: [
-                          { $toLower: { $ifNull: ['$$w.status', ''] } },
-                          ['paid', 'approved']
+                        $and: [
+                          { $eq: ['$$w.userEmail', '$email'] },
+                          {
+                            $in: [
+                              { $toLower: { $ifNull: ['$$w.status', ''] } },
+                              ['paid', 'approved', 'success', 'pending']
+                            ]
+                          }
                         ]
                       }
                     }
                   },
                   as: 'w',
-                  in: { $ifNull: ['$$w.amount', { $ifNull: ['$$w.originalAmount', 0] }] }
+                  in: {
+                    $ifNull: [
+                      '$$w.amount',
+                      { $ifNull: ['$$w.originalAmount', 0] }
+                    ]
+                  }
                 }
               }
             },
-            pendingWithdrawn: {
+
+            // টিমের উইথড্র
+            teamWithdrawn: {
               $sum: {
                 $map: {
                   input: {
                     $filter: {
-                      input: '$userWithdrawals',
+                      input: '$allWithdrawals',
                       as: 'w',
                       cond: {
-                        $eq: [{ $toLower: { $ifNull: ['$$w.status', ''] } }, 'pending']
+                        $and: [
+                          { $ne: ['$$w.userEmail', '$email'] },
+                          {
+                            $in: [
+                              { $toLower: { $ifNull: ['$$w.status', ''] } },
+                              ['paid', 'approved', 'success', 'pending']
+                            ]
+                          }
+                        ]
                       }
                     }
                   },
                   as: 'w',
-                  in: { $ifNull: ['$$w.amount', { $ifNull: ['$$w.originalAmount', 0] }] }
+                  in: {
+                    $ifNull: [
+                      '$$w.amount',
+                      { $ifNull: ['$$w.originalAmount', 0] }
+                    ]
+                  }
                 }
               }
             }
           }
         },
+
+        // ৬. Final Balance গুলো (★ এখানে ফিক্স করা হয়েছে)
         {
           $addFields: {
+            totalEarnings: {
+              $add: ['$myEarnings', '$teamEarnings']
+            },
+
+            totalWithdrawn: {
+              $add: ['$ownWithdrawn', '$teamWithdrawn']
+            },
+
+            // নিজের Available
+            availableMyBalance: {
+              $max: [{ $subtract: ['$myEarnings', '$ownWithdrawn'] }, 0]
+            },
+
+            // টিমের Available
+            availableTeamBalance: {
+              $max: [{ $subtract: ['$teamEarnings', '$teamWithdrawn'] }, 0]
+            },
+
+            // ★★★ Fixed: মোট Available = সব earnings - সব withdrawals ★★★
             totalAmount: {
               $max: [
                 {
                   $subtract: [
-                    '$totalEarnings',
-                    { $add: ['$totalWithdrawn', '$pendingWithdrawn'] }
+                    { $add: ['$myEarnings', '$teamEarnings'] },
+                    { $add: ['$ownWithdrawn', '$teamWithdrawn'] }
                   ]
                 },
                 0
@@ -1086,11 +1297,17 @@ app.get('/api/admin/users', async (req, res) => {
             }
           }
         },
+
+        // ৭. অপ্রয়োজনীয় ফিল্ড বাদ
         {
           $project: {
             password: 0,
             paidTxs: 0,
-            userWithdrawals: 0
+            teamMembers: 0,
+            teamPaidTxs: 0,
+            allWithdrawals: 0,
+            ownWithdrawn: 0,
+            teamWithdrawn: 0
           }
         }
       ])
