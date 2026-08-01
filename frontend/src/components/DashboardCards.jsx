@@ -1,9 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
-import { CreateQrForm } from './CreateQrForm';
 import { 
-  Wallet, Users, Coins, Receipt, TrendingUp, PiggyBank, 
-  ArrowDownToLine, Copy, Trash2, User, Check, Link as LinkIcon, QrCode 
+  Copy, Trash2, User, Check, Link as LinkIcon, QrCode, Loader2, History, ArrowDownRight 
 } from "lucide-react";
 import { QRCodeSVG } from 'qrcode.react';
 import Swal from 'sweetalert2';
@@ -15,9 +13,8 @@ export const DashboardCards = () => {
   const [paymentLinks, setPaymentLinks] = useState([]);
   const [linkIdInput, setLinkIdInput] = useState("");
   
-  // ★ Localhost + Netlify দুটোই সাপোর্ট
   const NETLIFY_DOMAIN = "https://cash-app-pay.netlify.app";
-  const LOCAL_DOMAIN = "http://localhost:5173"; // Vite ডিফল্ট পোর্ট, প্রয়োজন হলে চেঞ্জ করো
+  const LOCAL_DOMAIN = "http://localhost:5173";
 
   const [selectedDomain, setSelectedDomain] = useState(
     import.meta.env.MODE === 'production' ? NETLIFY_DOMAIN : LOCAL_DOMAIN
@@ -26,12 +23,23 @@ export const DashboardCards = () => {
   const [newLinkTheme, setNewLinkTheme] = useState('light');
   const [showQrFor, setShowQrFor] = useState(null);
 
+  const [qrAmount, setQrAmount] = useState('');
+  const [qrDescription, setQrDescription] = useState('');
+  const [qrLoading, setQrLoading] = useState(false);
+  const [generatedQr, setGeneratedQr] = useState(null);
+
+  // Payment history state
+  const [paymentHistory, setPaymentHistory] = useState([]);
+
   const [stats, setStats] = useState({
-    balance: "$0.00",
-    myOwnEarnings: "$0.00",
-    teamTotalEarnings: "$0.00",
-    totalEarnings: "$0.00",
-    totalWithdrawn: "$0.00"
+    balance: 0,
+    availableTeamBalance: 0,
+    totalBillable: 0,
+    totalSettled: 0,
+    myOwnEarnings: 0,
+    teamTotalEarnings: 0,
+    totalEarnings: 0,
+    totalWithdrawn: 0
   });
 
   const [lastBalance, setLastBalance] = useState(null);
@@ -42,93 +50,90 @@ export const DashboardCards = () => {
     : 'http://localhost:5000';
 
   const getAuth = () => {
-    let email =
-      localStorage.getItem('userEmail') ||
-      localStorage.getItem('email') ||
-      localStorage.getItem('user_email') ||
-      '';
-
-    let role =
-      localStorage.getItem('role') ||
-      localStorage.getItem('userRole') ||
-      localStorage.getItem('user_role') ||
-      '';
-
-    let userId =
-      localStorage.getItem('userId') ||
-      localStorage.getItem('id') ||
-      '';
+    let email = '';
+    let role = '';
+    let userId = '';
 
     try {
       const raw = localStorage.getItem('userInfo') || localStorage.getItem('user');
-      if (raw) {
+      if (raw && raw !== 'undefined' && raw !== 'null') {
         const u = JSON.parse(raw);
-        if (!email) email = u.email || '';
-        if (!role) role = u.role || '';
-        if (!userId) userId = (u.id || u._id || u.userId || '').toString();
+        email = u.email || '';
+        role = u.role || '';
+        userId = (u.id || u._id || u.userId || '').toString();
       }
     } catch (e) {}
 
+    if (!email) {
+      email =
+        localStorage.getItem('userEmail') ||
+        localStorage.getItem('email') ||
+        localStorage.getItem('user_email') ||
+        '';
+    }
+    if (!role) {
+      role =
+        localStorage.getItem('role') ||
+        localStorage.getItem('userRole') ||
+        localStorage.getItem('user_role') ||
+        '';
+    }
+    if (!userId) {
+      userId =
+        localStorage.getItem('userId') ||
+        localStorage.getItem('id') ||
+        localStorage.getItem('_id') ||
+        '';
+    }
+
+    role = (role || '').toString().toLowerCase().trim();
+    if (role === 'teamleader' || role === 'team-leader' || role === 'team leader') {
+      role = 'team_leader';
+    }
+    if (role === 'master' || role === 'admin' || role === 'masteradmin') {
+      role = 'master_admin';
+    }
+
     return { email, role, userId };
   };
-
-  const { email: userEmail, role, userId } = getAuth();
 
   const playPaymentSound = () => {
     try {
       const audio = new Audio('/sounds/cashapp.mp3');
       audio.volume = 0.9;
-      audio.play().catch((err) => {
-        console.log('Sound play blocked by browser:', err);
-      });
-    } catch (e) {
-      console.log('Audio error:', e);
-    }
+      audio.play().catch(() => {});
+    } catch (e) {}
   };
 
   useEffect(() => {
     fetchPaymentLinks();
     fetchStats();
-
+    fetchPaymentHistory();
     const interval = setInterval(() => {
       fetchStats();
+      fetchPaymentHistory();
     }, 5000);
-
     return () => clearInterval(interval);
   }, []);
 
   const fetchPaymentLinks = async () => {
     try {
       const { email, role, userId } = getAuth();
-
       if (!email) {
-        console.warn('No user email in localStorage');
         setPaymentLinks([]);
         return;
       }
 
       const response = await axios.get(`${API_URL}/api/payment-links`, {
-        params: {
-          email,
-          userEmail: email,
-          role,
-          userId
-        }
+        params: { email, userEmail: email, role, userId }
       });
 
       const allLinks = Array.isArray(response.data) ? response.data : [];
-
-      const isMaster =
-        role === 'master_admin' ||
-        email === 'admin@mamun.com';
+      const isMaster = role === 'master_admin' || email === 'admin@mamun.com';
 
       const filteredLinks = isMaster
         ? allLinks
-        : allLinks.filter(
-            (link) =>
-              link.userEmail === email ||
-              link.email === email
-          );
+        : allLinks.filter((link) => link.userEmail === email || link.email === email);
 
       const linksWithTheme = filteredLinks.map((link) => {
         const theme = (link.theme || link.template || 'light').toString().toLowerCase();
@@ -147,99 +152,192 @@ export const DashboardCards = () => {
     }
   };
 
+  const fetchPaymentHistory = async () => {
+    try {
+      const { email, role, userId } = getAuth();
+      if (!email) return;
+
+      const response = await axios.get(`${API_URL}/api/transactions`, {
+        params: { email, userEmail: email, role, userId, limit: 10 }
+      });
+
+      const data = Array.isArray(response.data) ? response.data : (response.data.transactions || []);
+      setPaymentHistory(data.slice(0, 10));
+    } catch (error) {
+      try {
+        const { email, role, userId } = getAuth();
+        const response = await axios.get(`${API_URL}/api/payment-history`, {
+          params: { email, role, userId }
+        });
+        const data = Array.isArray(response.data) ? response.data : [];
+        setPaymentHistory(data.slice(0, 10));
+      } catch (err) {
+        console.error('Error fetching payment history:', err);
+      }
+    }
+  };
+
   const fetchStats = async () => {
     try {
       const { email, role, userId } = getAuth();
 
-      const response = await axios.get(`${API_URL}/api/balance`, {
+      if (!email) {
+        console.warn('No email found in auth');
+        return;
+      }
+
+      const balanceRes = await axios.get(`${API_URL}/api/balance`, {
         params: {
           email,
           userEmail: email,
           role,
-          userId
+          userId: userId || undefined
         }
       });
 
-      const data = response.data || {};
+      const data = balanceRes.data || {};
       const newBalance = Number(data.balance) || 0;
 
       if (!isFirstLoad.current && lastBalance !== null && newBalance > lastBalance) {
         playPaymentSound();
       }
-
       isFirstLoad.current = false;
       setLastBalance(newBalance);
 
       setStats({
-        balance: `$${newBalance.toLocaleString()}.00`,
-        myOwnEarnings: `$${(Number(data.myOwnEarnings) || 0).toLocaleString()}.00`,
-        teamTotalEarnings: `$${(Number(data.teamTotalEarnings) || 0).toLocaleString()}.00`,
-        totalEarnings: `$${(Number(data.totalEarnings) || 0).toLocaleString()}.00`,
-        totalWithdrawn: `$${(Number(data.totalWithdrawn) || 0).toLocaleString()}.00`
+        balance: newBalance,
+        availableTeamBalance: Number(data.availableTeamBalance) || 0,
+        totalBillable: Number(data.totalBillable) || 0,
+        totalSettled: Number(data.totalSettled) || 0,
+        myOwnEarnings: Number(data.myOwnEarnings) || 0,
+        teamTotalEarnings: Number(data.teamTotalEarnings) || 0,
+        totalEarnings: Number(data.totalEarnings) || 0,
+        totalWithdrawn: Number(data.totalWithdrawn) || 0
       });
     } catch (error) {
       console.error('Error fetching stats:', error);
     }
   };
 
+  const fmt = (val) => {
+    const n = Number(val) || 0;
+    return `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  };
+
+  const handleGenerateQr = async () => {
+    if (!qrAmount || parseFloat(qrAmount) <= 0) {
+      return Swal.fire({
+        icon: 'warning',
+        title: 'Required',
+        text: 'Please enter a valid amount',
+        confirmButtonColor: '#00D54B'
+      });
+    }
+
+    const { email, role, userId } = getAuth();
+    setQrLoading(true);
+
+    try {
+      const res = await axios.post(`${API_URL}/api/generate-gateway-qr`, {
+        amount: qrAmount,
+        currency: 'USD',
+        orderId: 'ORDER-' + Date.now(),
+        buyerEmail: 'customer@example.com',
+        userEmail: email,
+        userId,
+        role,
+        linkId: 'pay',
+        description: qrDescription || undefined
+      });
+
+      const data = res.data;
+      if (data.success) {
+        const lnInvoice = data.bolt11 || data.lightningInvoice || data.lnInvoice || '';
+        const qrValue = (lnInvoice && lnInvoice.startsWith('lnbc'))
+          ? `https://cash.app/launch/lightning/${lnInvoice}`
+          : (data.checkoutLink || '');
+
+        setGeneratedQr({
+          amount: qrAmount,
+          link: qrValue,
+          checkoutLink: data.checkoutLink
+        });
+
+        Swal.fire({
+          icon: 'success',
+          title: 'QR Generated!',
+          text: `Lightning QR for $${qrAmount}`,
+          confirmButtonColor: '#00D54B',
+          timer: 1400,
+          showConfirmButton: false
+        });
+        setQrAmount('');
+        setQrDescription('');
+        fetchStats();
+        fetchPaymentHistory();
+      } else {
+        Swal.fire({
+          icon: 'error',
+          title: 'Failed',
+          text: data.error || 'Failed',
+          confirmButtonColor: '#00D54B'
+        });
+      }
+    } catch (err) {
+      Swal.fire({
+        icon: 'error',
+        title: 'Error',
+        text: 'Server error',
+        confirmButtonColor: '#00D54B'
+      });
+    } finally {
+      setQrLoading(false);
+    }
+  };
+
   const handleCardThemeChange = async (id, newTheme) => {
     setPaymentLinks((prev) =>
-      prev.map((link) => {
-        if (link._id === id) {
-          return {
-            ...link,
-            theme: newTheme,
-            image: newTheme === 'green' ? imgGreen : imgLight
-          };
-        }
-        return link;
-      })
+      prev.map((link) =>
+        link._id === id
+          ? { ...link, theme: newTheme, image: newTheme === 'green' ? imgGreen : imgLight }
+          : link
+      )
     );
-
     try {
       await axios.put(`${API_URL}/api/payment-links/${id}`, {
         theme: newTheme,
         template: newTheme
       });
     } catch (error) {
-      console.error('Error updating theme:', error);
-      Swal.fire({
-        icon: 'error',
-        title: 'Error',
-        text: 'Failed to update theme in database'
-      });
       fetchPaymentLinks();
     }
   };
 
   const handleCreateLink = async () => {
     if (!linkIdInput.trim()) {
-      Swal.fire({
+      return Swal.fire({
         icon: 'warning',
         title: 'Required',
-        text: 'Please enter a name for the link ID!',
+        text: 'Please enter a link ID!',
         confirmButtonColor: '#00D54B'
       });
-      return;
     }
 
     const { email, userId } = getAuth();
     const trimmedId = linkIdInput.trim();
-    const finalUrl = `${selectedDomain}/${trimmedId}`;   // ★ selectedDomain ব্যবহার
-
-    const newLinkData = {
-      name: trimmedId,
-      url: finalUrl,
-      theme: newLinkTheme,
-      template: newLinkTheme,
-      createdAt: new Date(),
-      userEmail: email,
-      email: email,
-      userId: userId || null
-    };
+    const finalUrl = `${selectedDomain}/${trimmedId}`;
 
     try {
-      const response = await axios.post(`${API_URL}/api/create-payment-link`, newLinkData);
+      const response = await axios.post(`${API_URL}/api/create-payment-link`, {
+        name: trimmedId,
+        url: finalUrl,
+        theme: newLinkTheme,
+        template: newLinkTheme,
+        createdAt: new Date(),
+        userEmail: email,
+        email,
+        userId: userId || null
+      });
 
       const createdTheme = (response.data.theme || newLinkTheme).toString().toLowerCase();
       const createdItem = {
@@ -255,15 +353,14 @@ export const DashboardCards = () => {
       Swal.fire({
         icon: 'success',
         title: 'Success!',
-        text: 'Payment Link + QR Created Successfully!',
+        text: 'Payment Link Created!',
         confirmButtonColor: '#00D54B'
       });
     } catch (error) {
-      console.error('Error creating link:', error);
       Swal.fire({
         icon: 'error',
         title: 'Oops...',
-        text: 'Failed to save payment link',
+        text: 'Failed to save',
         confirmButtonColor: '#00D54B'
       });
     }
@@ -279,29 +376,21 @@ export const DashboardCards = () => {
       cancelButtonColor: '#3085d6',
       confirmButtonText: 'Yes, delete it!'
     });
-
     if (!result.isConfirmed) return;
 
     try {
       const { email, role } = getAuth();
-
       await axios.delete(`${API_URL}/api/payment-links/${id}`, {
-        params: {
-          email,
-          role
-        }
+        params: { email, role }
       });
-
       setPaymentLinks((prev) => prev.filter((link) => link._id !== id));
       if (showQrFor === id) setShowQrFor(null);
-
-      Swal.fire('Deleted!', 'Payment Link Deleted Successfully!', 'success');
+      Swal.fire('Deleted!', 'Payment Link Deleted!', 'success');
     } catch (error) {
-      console.error('Delete Error:', error.response?.data || error);
       Swal.fire({
         icon: 'error',
         title: 'Error',
-        text: error.response?.data?.error || 'Failed to delete payment link'
+        text: error.response?.data?.error || 'Failed'
       });
     }
   };
@@ -309,63 +398,189 @@ export const DashboardCards = () => {
   const handleSaveCardSettings = async (link) => {
     try {
       const currentLink = paymentLinks.find((l) => l._id === link._id) || link;
-
       await axios.put(`${API_URL}/api/payment-links/${link._id}`, {
         theme: currentLink.theme,
         template: currentLink.theme,
         name: currentLink.name,
-        url: `${selectedDomain}/${currentLink.name}`   // ★ selectedDomain ব্যবহার
+        url: `${selectedDomain}/${currentLink.name}`
       });
-
       Swal.fire({
         icon: 'success',
         title: 'Saved!',
-        text: `Theme and settings saved successfully for ${currentLink.name}!`,
-        confirmButtonColor: '#00D54B',
-        timer: 1500,
-        showConfirmButton: false
+        timer: 1200,
+        showConfirmButton: false,
+        confirmButtonColor: '#00D54B'
       });
-
       fetchPaymentLinks();
     } catch (error) {
-      console.error('Error updating link settings:', error);
-      Swal.fire({
-        icon: 'error',
-        title: 'Error',
-        text: 'Failed to save settings'
-      });
+      Swal.fire({ icon: 'error', title: 'Error', text: 'Failed to save' });
     }
   };
 
   return (
-    <div className="w-full box-border">
-      <div className="w-full max-w-[1400px] mx-auto space-y-3.5 box-border">
-        <h1 className="text-lg sm:text-2xl font-bold text-gray-800 px-1">Dashboard</h1>
+    <div className="w-full min-h-screen bg-[#F7F8FA] p-4 sm:p-6 md:p-8">
+      <div className="w-full max-w-[1200px] mx-auto space-y-6">
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 sm:gap-3 w-full box-border">
-          <StatCard title="AVAILABLE BALANCE" amount={stats.balance} icon={<Wallet className="text-green-500" size={18} />} />
-          <StatCard title="MY OWN EARNINGS" amount={stats.myOwnEarnings} icon={<PiggyBank className="text-green-500" size={18} />} />
-          <StatCard title="TEAM TOTAL EARNINGS" amount={stats.teamTotalEarnings} icon={<Users className="text-green-500" size={18} />} />
-          <StatCard title="TOTAL EARNINGS" amount={stats.totalEarnings} icon={<Coins className="text-green-500" size={18} />} />
-          <StatCard title="TOTAL WITHDRAWN" amount={stats.totalWithdrawn} icon={<ArrowDownToLine className="text-green-500" size={18} />} />
-          <StatCard title="TOTAL BILLABLE" amount="$0.00" icon={<Receipt className="text-green-500" size={18} />} />
-          <StatCard title="TOTAL SETTLED" amount="0" icon={<TrendingUp className="text-green-500" size={18} />} />
+        {/* Header */}
+        <div>
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 tracking-tight">Dashboard</h1>
+          <p className="text-sm text-gray-500 mt-1">Overview of your activity</p>
         </div>
 
-        <div className="flex flex-col lg:grid lg:grid-cols-2 gap-3.5 w-full items-start box-border">
-          
-          <div className="w-full bg-white rounded-2xl shadow-sm border border-gray-100 p-3.5 sm:p-5 box-border overflow-hidden">
-            <CreateQrForm />
+        {/* ========== STATS 2×4 ========== */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+          <StatCard title="AVAILABLE MY BALANCE" amount={fmt(stats.balance)} />
+          <StatCard title="AVAILABLE TEAM BALANCE" amount={fmt(stats.availableTeamBalance)} highlight />
+          <StatCard title="TOTAL BILLABLE" amount={fmt(stats.totalBillable)} />
+          <StatCard title="TOTAL SETTLED" amount={fmt(stats.totalSettled)} />
+          <StatCard title="MY OWN EARNINGS" amount={fmt(stats.myOwnEarnings)} />
+          <StatCard title="TEAM TOTAL EARNINGS" amount={fmt(stats.teamTotalEarnings)} />
+          <StatCard title="TOTAL EARNINGS" amount={fmt(stats.totalEarnings)} />
+          <StatCard title="TOTAL WITHDRAWN" amount={fmt(stats.totalWithdrawn)} />
+        </div>
+
+        {/* ========== BOTTOM ========== */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
+
+          {/* LEFT — Create New QR Payment & Recent Payment History */}
+          <div className="space-y-5">
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 sm:p-6 space-y-5">
+              <h2 className="text-base font-bold text-gray-900">Create New QR Payment</h2>
+
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1.5">Amount (USD)</label>
+                <div className="relative">
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 font-semibold">$</span>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    value={qrAmount}
+                    onChange={(e) => setQrAmount(e.target.value)}
+                    placeholder="0"
+                    className="w-full pl-8 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-base font-semibold text-gray-800 outline-none focus:border-green-500 focus:bg-white transition"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <p className="text-xs text-gray-500 mb-2">Quick amounts</p>
+                <div className="flex flex-wrap gap-2">
+                  {['10', '50', '100', '200'].map((a) => (
+                    <button
+                      key={a}
+                      type="button"
+                      onClick={() => setQrAmount(a)}
+                      className="px-4 py-1.5 rounded-full border border-gray-200 text-sm font-medium text-gray-700 hover:border-green-500 hover:text-green-600 hover:bg-green-50 transition cursor-pointer"
+                    >
+                      ${a}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1.5">Description (optional)</label>
+                <input
+                  type="text"
+                  value={qrDescription}
+                  onChange={(e) => setQrDescription(e.target.value)}
+                  placeholder="e.g. NewYork traffic or Texas traffic"
+                  className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-700 outline-none focus:border-green-500 focus:bg-white transition"
+                />
+                <p className="text-[11px] text-gray-400 mt-1">This is for you to remember the transaction.</p>
+              </div>
+
+              <button
+                onClick={handleGenerateQr}
+                disabled={qrLoading}
+                className="w-full bg-[#00D54B] hover:bg-[#00c043] text-white py-3.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition shadow-sm cursor-pointer disabled:opacity-60"
+              >
+                {qrLoading ? <Loader2 size={18} className="animate-spin" /> : <QrCode size={18} />}
+                {qrLoading ? 'Generating...' : 'Generate QR'}
+              </button>
+
+              {generatedQr && (
+                <div className="mt-2 p-5 bg-gray-50 rounded-xl border border-gray-100 flex flex-col items-center gap-4">
+                  <p className="text-sm font-bold text-gray-800">${generatedQr.amount}</p>
+                  
+                  <div className="relative flex items-center justify-center bg-white p-3 rounded-2xl shadow-sm">
+                    <QRCodeSVG value={generatedQr.link} size={300} level="H" />
+                    <div className="absolute w-14 h-14 bg-[#00D54B] rounded-xl flex items-center justify-center shadow-md border-2 border-white">
+                      <span className="text-white font-bold text-3xl">$</span>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(generatedQr.link);
+                      Swal.fire({ icon: 'success', title: 'Copied!', timer: 1000, showConfirmButton: false });
+                    }}
+                    className="text-xs text-green-600 font-semibold hover:underline cursor-pointer"
+                  >
+                    Copy Invoice
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* PAYMENT HISTORY SECTION (Scroll removed as requested) */}
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 sm:p-6 space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="p-2 bg-green-50 text-green-600 rounded-xl">
+                    <History size={16} />
+                  </div>
+                  <h2 className="text-base font-bold text-gray-900">Others Transactions</h2>
+                </div>
+                <span className="text-xs font-semibold text-green-600 cursor-pointer hover:underline">VIEW ALL</span>
+              </div>
+
+              <div className="divide-y divide-gray-100">
+                {paymentHistory.length === 0 ? (
+                  <p className="text-xs text-gray-400 text-center py-6">No recent payment history found.</p>
+                ) : (
+                  paymentHistory.map((item, idx) => {
+                    const isCompleted = (item.status || 'completed').toLowerCase() === 'completed' || item.success;
+                    return (
+                      <div key={item._id || idx} className="py-3 flex items-center justify-between gap-3 first:pt-0 last:pb-0">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 ${isCompleted ? 'bg-green-50 text-green-600' : 'bg-amber-50 text-amber-600'}`}>
+                            <ArrowDownRight size={16} />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-xs font-bold text-gray-800 truncate">
+                              {item.name || item.description || item.orderId || 'Payment Received'}
+                            </p>
+                            <p className="text-[10px] text-gray-400 truncate">
+                              {item.createdAt ? new Date(item.createdAt).toLocaleString() : 'Just now'}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <p className="text-xs font-bold text-gray-900">
+                            +${Number(item.amount || 0).toFixed(2)}
+                          </p>
+                          <span className={`inline-block text-[9px] font-bold px-1.5 py-0.5 rounded-md ${isCompleted ? 'bg-green-50 text-green-600' : 'bg-yellow-50 text-yellow-600'}`}>
+                            {item.status || (isCompleted ? 'Completed' : 'Pending')}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
           </div>
 
-          <div className="w-full space-y-3 box-border">
-            
-            <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-2.5 bg-white p-3.5 rounded-2xl border border-gray-100 shadow-sm w-full box-border">
-              <h2 className="text-sm font-bold text-gray-800">Payment Link</h2>
+          {/* RIGHT — Payment Link */}
+          <div className="space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-gray-100 shadow-sm">
+              <h2 className="text-base font-bold text-gray-900">Payment Link</h2>
               <select
                 value={selectedDomain}
                 onChange={(e) => setSelectedDomain(e.target.value)}
-                className="w-full sm:w-auto px-3 py-2 bg-gray-50 border border-green-500 rounded-xl text-xs font-medium text-gray-700 outline-none focus:ring-2 focus:ring-green-100 cursor-pointer shadow-sm"
+                className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium text-gray-700 outline-none focus:border-green-500 cursor-pointer"
               >
                 <option value={LOCAL_DOMAIN}>{LOCAL_DOMAIN}</option>
                 <option value={NETLIFY_DOMAIN}>{NETLIFY_DOMAIN}</option>
@@ -373,101 +588,67 @@ export const DashboardCards = () => {
             </div>
 
             {paymentLinks.map((item) => {
-              const currentLinkDisplay = `${selectedDomain}/${item.name}`;  // ★ selectedDomain ব্যবহার
+              const currentLinkDisplay = `${selectedDomain}/${item.name}`;
               const isGreenTheme = item.theme === 'green';
               const isQrOpen = showQrFor === item._id;
 
               return (
-                <div key={item._id} className="w-full bg-white p-3.5 rounded-2xl border border-gray-100 shadow-sm space-y-3 box-border overflow-hidden">
-                  
-                  <div className="flex items-start justify-between gap-2.5">
-                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                      <div className={`w-11 h-9 sm:w-12 sm:h-10 rounded-xl border flex items-center justify-center p-1 shadow-sm overflow-hidden flex-shrink-0 ${isGreenTheme ? 'bg-green-500' : 'bg-gray-100'}`}>
-                        <img
-                          src={isGreenTheme ? imgGreen : imgLight}
-                          alt="Theme Preview"
-                          className="w-full h-full object-cover rounded-lg"
-                        />
+                <div key={item._id} className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm space-y-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                      <div className={`w-12 h-10 rounded-xl border flex items-center justify-center p-1 overflow-hidden shrink-0 ${isGreenTheme ? 'bg-green-500' : 'bg-gray-100'}`}>
+                        <img src={isGreenTheme ? imgGreen : imgLight} alt="" className="w-full h-full object-cover rounded-lg" />
                       </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-[11px] text-gray-500 truncate flex items-center gap-1 font-medium">
-                          <LinkIcon size={11} className="flex-shrink-0" />
+                      <div className="min-w-0">
+                        <p className="text-xs text-gray-600 truncate flex items-center gap-1 font-medium">
+                          <LinkIcon size={12} className="shrink-0" />
                           <span className="truncate">{currentLinkDisplay}</span>
-                        </p>
-                        <p className="text-[10px] text-green-600 font-semibold truncate mt-0.5">
-                          Creator: {item.userEmail || item.email || userEmail}
                         </p>
                       </div>
                     </div>
-
-                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                    <div className="flex items-center gap-1.5 shrink-0">
                       <button
                         onClick={() => setShowQrFor(isQrOpen ? null : item._id)}
-                        className={`p-2 rounded-xl transition cursor-pointer ${
-                          isQrOpen 
-                            ? 'bg-green-500 text-white' 
-                            : 'bg-green-50 text-green-600 active:bg-green-100'
-                        }`}
-                        title="Show QR Code"
+                        className={`p-2 rounded-xl cursor-pointer ${isQrOpen ? 'bg-green-500 text-white' : 'bg-gray-100 text-gray-600'}`}
                       >
                         <QrCode size={14} />
                       </button>
-
                       <button
                         onClick={() => {
                           navigator.clipboard.writeText(currentLinkDisplay);
-                          Swal.fire({
-                            icon: 'success',
-                            title: 'Copied!',
-                            text: 'Link Copied to clipboard!',
-                            timer: 1200,
-                            showConfirmButton: false
-                          });
+                          Swal.fire({ icon: 'success', title: 'Copied!', timer: 1000, showConfirmButton: false });
                         }}
-                        className="p-2 bg-green-50 active:bg-green-100 text-green-600 rounded-xl transition cursor-pointer"
-                        title="Copy Link"
+                        className="p-2 bg-gray-100 text-gray-600 rounded-xl cursor-pointer"
                       >
                         <Copy size={14} />
                       </button>
-
                       <button
                         onClick={() => handleDeleteLink(item._id)}
-                        className="p-2 bg-red-50 active:bg-red-100 text-red-600 rounded-xl transition cursor-pointer"
-                        title="Delete Link"
+                        className="p-2 bg-red-50 text-red-500 rounded-xl cursor-pointer"
                       >
                         <Trash2 size={14} />
                       </button>
                     </div>
                   </div>
 
-                  <div className="flex items-center justify-between gap-2 pt-2.5 border-t border-gray-100">
-                    <div className="flex-shrink-0">
-                      <span className="text-[9px] text-gray-400 font-bold uppercase tracking-wider block">TEMPLATE</span>
-                      <span className="text-xs font-bold text-gray-800">
-                        {isGreenTheme ? 'CashApp' : 'Default'}
-                      </span>
+                  <div className="flex items-center justify-between pt-2 border-t border-gray-50">
+                    <div>
+                      <span className="text-[9px] text-gray-400 font-bold uppercase tracking-wider">TEMPLATE</span>
+                      <p className="text-xs font-bold text-gray-800">{isGreenTheme ? 'CashApp' : 'Default'}</p>
                     </div>
-
-                    <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                    <div className="flex items-center gap-1.5">
                       <button
                         onClick={() => handleCardThemeChange(item._id, isGreenTheme ? 'light' : 'green')}
-                        className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition cursor-pointer flex items-center gap-1 ${
-                          isGreenTheme
-                            ? 'bg-green-500 text-white shadow-sm'
-                            : 'bg-gray-900 text-white'
-                        }`}
-                        title="Toggle Theme"
+                        className={`px-3 py-1.5 rounded-lg text-[11px] font-bold cursor-pointer ${isGreenTheme ? 'bg-green-500 text-white' : 'bg-gray-900 text-white'}`}
                       >
                         {isGreenTheme ? 'CashApp' : 'Default'}
                       </button>
-
-                      <button className="p-2 bg-gray-50 active:bg-gray-100 text-gray-600 rounded-lg transition cursor-pointer" title="User View">
+                      <button className="p-2 bg-gray-50 text-gray-500 rounded-lg cursor-pointer">
                         <User size={14} />
                       </button>
-
                       <button
                         onClick={() => handleSaveCardSettings(item)}
-                        className="px-3 py-1.5 bg-green-500 active:bg-green-600 text-white text-[11px] font-bold rounded-lg transition cursor-pointer shadow-sm flex items-center gap-1"
+                        className="px-3 py-1.5 bg-green-500 text-white text-[11px] font-bold rounded-lg cursor-pointer flex items-center gap-1"
                       >
                         <Check size={12} /> Save
                       </button>
@@ -475,45 +656,22 @@ export const DashboardCards = () => {
                   </div>
 
                   {isQrOpen && (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-                      <div className="bg-white rounded-2xl shadow-2xl w-[380px] overflow-hidden relative animate-in fade-in zoom-in duration-200">
-                        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
-                          <p className="text-sm font-semibold text-gray-700">Payment Link QR</p>
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+                      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-[400px] overflow-hidden">
+                        <div className="flex items-center justify-between px-4 py-3 border-b">
+                          <p className="text-sm font-semibold">Payment Link QR</p>
                           <button
                             onClick={() => setShowQrFor(null)}
-                            className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-500 text-lg leading-none"
+                            className="text-gray-400 text-xl leading-none cursor-pointer"
                           >
                             ×
                           </button>
                         </div>
-
-                        <div className="p-6 flex flex-col items-center">
-                          <div className="relative">
-                            <QRCodeSVG
-                              value={currentLinkDisplay}
-                              size={300}
-                              bgColor="#ffffff"
-                              fgColor="#000000"
-                              level="H"
-                              includeMargin={false}
-                            />
-
-                            <div className="absolute inset-0 m-auto w-[80px] h-[80px] flex items-center justify-center pointer-events-none">
-                              <svg 
-                                xmlns="http://www.w3.org/2000/svg" 
-                                viewBox="-9.6 -16 83.2 96" 
-                                className="w-[80px] h-[80px] drop-shadow-md"
-                              >
-                                <g fill="#FFF">
-                                  <path 
-                                    fill="#00D632" 
-                                    d="M41.7 0c6.4 0 9.6 0 13.1 1.1a13.6 13.6 0 018.1 8.1C64 12.7 64 15.9 64 22.31v19.37c0 6.42 0 9.64-1.1 13.1a13.6 13.6 0 01-8.1 8.1C51.3 64 48.1 64 41.7 64H22.3c-6.42 0-9.64 0-13.1-1.1a13.6 13.6 0 01-8.1-8.1C0 51.3 0 48.1 0 41.69V22.3c0-6.42 0-9.64 1.1-13.1a13.6 13.6 0 018.1-8.1C12.7 0 15.9 0 22.3 0z"
-                                  />
-                                  <path 
-                                    d="M42.47 23.8c.5.5 1.33.5 1.8 0l2.5-2.6c.53-.5.5-1.4-.06-1.94a19.73 19.73 0 00-6.72-3.84l.79-3.8c.17-.83-.45-1.61-1.28-1.61h-4.84a1.32 1.32 0 00-1.28 1.06l-.7 3.38c-6.44.33-11.9 3.6-11.9 10.3 0 5.8 4.51 8.29 9.28 10 4.51 1.72 6.9 2.36 6.9 4.78 0 2.49-2.38 3.95-5.9 3.95-3.2 0-6.56-1.07-9.16-3.68a1.3 1.3 0 00-1.84 0l-2.7 2.7a1.36 1.36 0 000 1.92c2.1 2.07 4.76 3.57 7.792 4.4l-.74 3.57c-.17.83.44 1.6 1.27 1.61l4.85.04a1.32 1.32 0 001.3-1.06l.7-3.39C40.28 49.07 45 44.8 45 38.57c0-5.74-4.7-8.16-10.4-10.13-3.26-1.21-6.08-2.04-6.08-4.53 0-2.42 2.63-3.38 5.27-3.38 3.36 0 6.59 1.39 8.7 3.29z"
-                                  />
-                                </g>
-                              </svg>
+                        <div className="p-6 flex flex-col items-center gap-4">
+                          <div className="relative flex items-center justify-center bg-white p-2">
+                            <QRCodeSVG value={currentLinkDisplay} size={300} level="H" />
+                            <div className="absolute w-14 h-14 bg-[#00D54B] rounded-xl flex items-center justify-center shadow-md border-2 border-white">
+                              <span className="text-white font-bold text-3xl">$</span>
                             </div>
                           </div>
                         </div>
@@ -524,56 +682,47 @@ export const DashboardCards = () => {
               );
             })}
 
-            <div className="w-full bg-white p-4 sm:p-6 rounded-2xl border border-gray-100 shadow-sm space-y-4 box-border">
+            {/* Create new link */}
+            <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm space-y-4">
               <div>
-                <label className="block text-[11px] font-bold text-gray-800 uppercase tracking-wider mb-1.5">
-                  Link ID (text)
+                <label className="block text-[11px] font-bold text-gray-700 uppercase tracking-wider mb-1.5">
+                  Link ID
                 </label>
                 <input
                   type="text"
                   placeholder="e.g. Stephanie"
                   value={linkIdInput}
                   onChange={(e) => setLinkIdInput(e.target.value)}
-                  className="w-full p-3 bg-gray-50 rounded-xl border border-gray-200 outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100 transition-all font-medium text-sm box-border"
+                  className="w-full p-3 bg-gray-50 rounded-xl border border-gray-200 outline-none focus:border-green-500 text-sm"
                 />
-                <p className="text-[10px] text-gray-400 mt-1.5">
-                  This will be your unique payment URL based on selected domain.
-                </p>
               </div>
-
-              <div>
-                <label className="block text-[11px] font-bold text-gray-800 uppercase tracking-wider mb-1.5">
-                  Select Initial Theme
-                </label>
-                <div className="flex gap-2.5">
-                  <button
-                    type="button"
-                    onClick={() => setNewLinkTheme('light')}
-                    className={`flex-1 py-2.5 rounded-xl font-bold text-xs border-2 transition cursor-pointer ${
-                      newLinkTheme === 'light'
-                        ? 'border-green-500 bg-green-50 text-green-700'
-                        : 'border-gray-200 text-gray-600'
-                    }`}
-                  >
-                    Default (Light)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setNewLinkTheme('green')}
-                    className={`flex-1 py-2.5 rounded-xl font-bold text-xs border-2 transition cursor-pointer ${
-                      newLinkTheme === 'green'
-                        ? 'border-green-500 bg-green-50 text-green-700'
-                        : 'border-gray-200 text-gray-600'
-                    }`}
-                  >
-                    CashApp (Green)
-                  </button>
-                </div>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setNewLinkTheme('light')}
+                  className={`flex-1 py-2 rounded-xl text-xs font-bold border-2 cursor-pointer ${
+                    newLinkTheme === 'light'
+                      ? 'border-green-500 bg-green-50 text-green-700'
+                      : 'border-gray-200 text-gray-600'
+                  }`}
+                >
+                  Default
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setNewLinkTheme('green')}
+                  className={`flex-1 py-2 rounded-xl text-xs font-bold border-2 cursor-pointer ${
+                    newLinkTheme === 'green'
+                      ? 'border-green-500 bg-green-50 text-green-700'
+                      : 'border-gray-200 text-gray-600'
+                  }`}
+                >
+                  CashApp
+                </button>
               </div>
-
               <button
                 onClick={handleCreateLink}
-                className="w-full bg-green-500 text-white py-3.5 rounded-xl font-bold active:bg-green-600 hover:bg-green-600 transition-all duration-300 shadow-lg shadow-green-100 cursor-pointer box-border text-sm"
+                className="w-full bg-green-500 text-white py-3 rounded-xl font-bold text-sm hover:bg-green-600 transition cursor-pointer"
               >
                 Create New Link + QR
               </button>
@@ -585,11 +734,14 @@ export const DashboardCards = () => {
   );
 };
 
-const StatCard = ({ title, amount, icon }) => (
-  <div className="bg-white p-3 sm:p-4 rounded-xl shadow-sm border border-gray-100 w-full box-border">
-    <div className="mb-1.5">{icon}</div>
-    <p className="text-[9px] sm:text-[10px] tracking-wider text-gray-400 font-bold mb-0.5 leading-tight">{title}</p>
-    <h3 className="text-base sm:text-lg font-bold text-gray-800 truncate">{amount}</h3>
+const StatCard = ({ title, amount, highlight }) => (
+  <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 sm:p-6 flex flex-col justify-between min-h-[95px]">
+    <p className="text-[10px] sm:text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-3">
+      {title}
+    </p>
+    <p className={`text-xl sm:text-2xl font-bold tracking-tight ${highlight ? 'text-blue-600' : 'text-gray-900'}`}>
+      {amount}
+    </p>
   </div>
 );
 

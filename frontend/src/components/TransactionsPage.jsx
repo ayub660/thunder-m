@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { QrCode, Search, Filter, DollarSign, Edit } from "lucide-react";
+import { QrCode, Search, Filter } from "lucide-react";
 import { useNavigate } from 'react-router-dom';
 import { TransactionList } from './TransactionList';
-import Swal from 'sweetalert2';
 
 const formatCurrency = (val) => {
   return new Intl.NumberFormat('en-US', {
@@ -14,7 +13,6 @@ const formatCurrency = (val) => {
 export function TransactionsPage() {
   const navigate = useNavigate();
   const [transactions, setTransactions] = useState([]);
-  const [usersSummary, setUsersSummary] = useState([]);
   const [loading, setLoading] = useState(true);
 
   const [searchTerm, setSearchTerm] = useState('');
@@ -48,7 +46,7 @@ export function TransactionsPage() {
       role = (userEmail === 'admin@mamun.com') ? 'master_admin' : 'single';
     }
 
-    // ১. ট্রানজেকশন ফেচ করা
+    // ট্রানজেকশন ফেচ করা
     fetch(`${API_URL}/api/transactions?userId=${encodeURIComponent(userId)}&userEmail=${encodeURIComponent(userEmail)}&role=${encodeURIComponent(role)}`)
       .then(res => res.json())
       .then(data => {
@@ -65,118 +63,11 @@ export function TransactionsPage() {
         console.error('Failed to load transactions', err);
         setLoading(false);
       });
-
-    // ২. মাস্টার অ্যাডমিন হলে ইউজারদের সামারি (ব্যালেন্স ও উইথড্র হিসাব) ফেচ করা
-    if (role === 'master_admin' || userEmail === 'admin@mamun.com') {
-      fetch(`${API_URL}/api/admin/users-summary`)
-        .then(res => res.json())
-        .then(data => {
-          if (data.success && Array.isArray(data.users)) {
-            setUsersSummary(data.users);
-          }
-        })
-        .catch(err => console.error('Failed to load users summary', err));
-    }
   };
 
   useEffect(() => {
     fetchTransactions();
   }, [API_URL]);
-
-  // ইউজার ইনফো এডিট করার ফাংশন
-  const handleEditUser = async (user) => {
-    const { value: formValues } = await Swal.fire({
-      title: 'Edit User Info',
-      html:
-        `<input id="swal-input-name" class="swal2-input" placeholder="Name" value="${user.name || ''}">` +
-        `<input id="swal-input-email" class="swal2-input" placeholder="Email" value="${user.email || ''}">`,
-      focusConfirm: false,
-      showCancelButton: true,
-      confirmButtonText: 'Update',
-      confirmButtonColor: '#10B981',
-      preConfirm: () => {
-        return {
-          name: document.getElementById('swal-input-name').value,
-          email: document.getElementById('swal-input-email').value
-        }
-      }
-    });
-
-    if (formValues) {
-      try {
-        const res = await fetch(`${API_URL}/api/admin/users/${user._id || user.id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(formValues)
-        });
-        const data = await res.json();
-        if (res.ok) {
-          Swal.fire('Updated!', 'User info updated successfully.', 'success');
-          fetchTransactions();
-        } else {
-          Swal.fire('Error!', data.message || 'Failed to update', 'error');
-        }
-      } catch (err) {
-        Swal.fire('Error!', 'Server connection error', 'error');
-      }
-    }
-  };
-
-  // অ্যাডমিন কর্তৃক উইথড্র / পে (Pay / Withdraw) হ্যান্ডলার (Insufficient Balance চেক সহ)
-  const handleAdminWithdraw = async (targetUser) => {
-    const availableBalance = Number(targetUser.availableBalance || 0);
-
-    const { value: amount } = await Swal.fire({
-      title: `Withdraw for ${targetUser.name || targetUser.email}`,
-      input: 'number',
-      inputLabel: `Available Balance: $${availableBalance.toFixed(2)}`,
-      inputPlaceholder: 'Enter withdrawal amount',
-      showCancelButton: true,
-      confirmButtonText: 'Submit Withdrawal',
-      confirmButtonColor: '#10B981',
-    });
-
-    if (!amount) return;
-    const withdrawAmount = Number(amount);
-
-    if (withdrawAmount <= 0) {
-      return Swal.fire('Invalid', 'Please enter a valid amount greater than 0', 'warning');
-    }
-
-    // পর্যাপ্ত ব্যালেন্স না থাকলে Insufficient Funds দেখাবে
-    if (withdrawAmount > availableBalance) {
-      return Swal.fire(
-        'Insufficient Balance!', 
-        `You do not have enough funds. Available: $${availableBalance.toFixed(2)}`, 
-        'error'
-      );
-    }
-
-    try {
-      const res = await fetch(`${API_URL}/api/withdraw`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: targetUser._id || targetUser.id,
-          userName: targetUser.name || 'User',
-          userEmail: targetUser.email,
-          amount: withdrawAmount,
-          payoutMethod: 'Admin Payout'
-        })
-      });
-
-      const data = await res.json();
-      if (res.ok && data.success) {
-        Swal.fire('Success!', 'Withdrawal request created successfully!', 'success');
-        fetchTransactions(); // ডেটা রিফ্রেশ করবে
-      } else {
-        Swal.fire('Failed', data.message || 'Something went wrong', 'error');
-      }
-    } catch (err) {
-      console.error(err);
-      Swal.fire('Error', 'Server connection failed', 'error');
-    }
-  };
 
   const totalTransactionsCount = transactions.length;
 
@@ -237,18 +128,13 @@ export function TransactionsPage() {
     setToDate('');
   };
 
-  let storedUserCheck = {};
-  try {
-    storedUserCheck = JSON.parse(localStorage.getItem('userInfo') || localStorage.getItem('user') || '{}');
-  } catch (e) {}
-  const isMasterAdmin = storedUserCheck.role === 'master_admin' || storedUserCheck.email === 'admin@mamun.com' || localStorage.getItem('role') === 'master_admin';
-
   return (
     <div className="p-4 sm:p-6 md:p-8 bg-[#F9FAFB] min-h-screen">
+      {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
         <div>
           <h1 className="text-2xl sm:text-3xl font-extrabold text-gray-900 tracking-tight">Transactions</h1>
-          <p className="text-sm text-gray-500 mt-1">View all payment activity and user balances</p>
+          <p className="text-sm text-gray-500 mt-1">View all payment activity</p>
         </div>
         <button 
           onClick={() => navigate('/create-qr')} 
@@ -258,49 +144,7 @@ export function TransactionsPage() {
         </button>
       </div>
 
-      {/* মাস্টার অ্যাডমিনের জন্য ইউজারের সামারি, এডিট ও পে/উইথড্র অপশন */}
-      {isMasterAdmin && usersSummary.length > 0 && (
-        <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm mb-8">
-          <h2 className="text-lg font-bold text-gray-900 mb-4">Users Earnings & Withdrawal Management</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {usersSummary.map((u) => (
-              <div key={u._id || u.id} className="p-4 bg-gray-50 rounded-xl border border-gray-100 flex flex-col justify-between gap-3">
-                <div>
-                  <h3 className="font-bold text-gray-800">{u.name || "Unnamed User"}</h3>
-                  <p className="text-xs text-gray-500">{u.email}</p>
-                </div>
-                <div className="flex items-center justify-between border-t border-gray-200 pt-3">
-                  <div>
-                    <span className="text-[10px] text-gray-400 block uppercase font-bold">Available Balance</span>
-                    <span className="text-emerald-600 font-extrabold text-base flex items-center">
-                      <DollarSign size={16} /> {Number(u.availableBalance || 0).toFixed(2)}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {/* Edit User Button */}
-                    <button
-                      onClick={() => handleEditUser(u)}
-                      title="Edit User Info"
-                      className="p-2 bg-gray-200 hover:bg-emerald-50 text-gray-700 hover:text-emerald-600 rounded-lg transition cursor-pointer"
-                    >
-                      <Edit size={16} />
-                    </button>
-                    {/* Pay / Withdraw Button */}
-                    <button
-                      onClick={() => handleAdminWithdraw(u)}
-                      title="Pay / Withdraw"
-                      className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer shadow-sm flex items-center gap-1"
-                    >
-                      <DollarSign size={14} /> Pay
-                    </button>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
+      {/* Stats Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 mb-8">
         <div className="bg-white p-5 sm:p-6 rounded-2xl border border-gray-100 shadow-sm flex flex-col justify-between">
           <span className="text-[11px] font-bold uppercase tracking-wider text-gray-400">Total Transactions</span>
@@ -331,6 +175,7 @@ export function TransactionsPage() {
         </div>
       </div>
 
+      {/* Filters */}
       <div className="bg-white p-4 sm:p-5 rounded-2xl border border-gray-100 shadow-sm mb-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 items-center">
         <div className="relative">
           <label className="block text-[11px] font-bold uppercase tracking-wider text-gray-400 mb-1">Search</label>
@@ -398,6 +243,7 @@ export function TransactionsPage() {
         </div>
       </div>
 
+      {/* Transaction List */}
       <TransactionList items={filteredTransactions} loading={loading} />
     </div>
   );

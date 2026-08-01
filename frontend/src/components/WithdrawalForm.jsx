@@ -36,19 +36,19 @@ export function WithdrawalForm({ onSuccess }) {
     : 'http://localhost:5000';
 
   const getAuth = useCallback(() => {
-    let email = localStorage.getItem('userEmail') || localStorage.getItem('email') || '';
+    let email = localStorage.getItem('userEmail') || localStorage.getItem('email') || localStorage.getItem('adminEmail') || '';
     let role = localStorage.getItem('role') || localStorage.getItem('userRole') || '';
     let userId = localStorage.getItem('userId') || localStorage.getItem('id') || '';
     let name = localStorage.getItem('userName') || localStorage.getItem('name') || 'User';
 
     try {
-      const raw = localStorage.getItem('userInfo') || localStorage.getItem('user');
+      const raw = localStorage.getItem('userInfo') || localStorage.getItem('user') || localStorage.getItem('admin');
       if (raw) {
         const u = JSON.parse(raw);
-        if (!email) email = u.email || '';
+        if (!email) email = u.email || u.userEmail || '';
         if (!role) role = u.role || '';
         if (!userId) userId = (u.id || u._id || u.userId || '').toString();
-        if (!name || name === 'User') name = u.name || 'User';
+        if (!name || name === 'User') name = u.name || u.userName || 'User';
       }
     } catch (e) {
       console.error("Failed to parse user info from localStorage", e);
@@ -61,6 +61,7 @@ export function WithdrawalForm({ onSuccess }) {
     try {
       setHistoryLoading(true);
       setError(null);
+      const token = localStorage.getItem('token') || localStorage.getItem('adminToken') || localStorage.getItem('authToken');
       const { email, role, userId } = getAuth();
 
       if (!email) {
@@ -69,16 +70,41 @@ export function WithdrawalForm({ onSuccess }) {
         return;
       }
 
-      const [balanceRes, historyRes] = await Promise.all([
-        axios.get(`${API_URL}/api/balance`, { params: { email, role, userId } }),
-        axios.get(`${API_URL}/api/my-withdrawals`, { params: { userEmail: email, email, role } })
-      ]);
+      // ড্যাশবোর্ডের মতো একই এন্ডপয়েন্ট বা ফলব্যাক ব্যবহার করে সঠিক ব্যালেন্স ও ডেটা ফেচ করা
+      const dashboardRes = await axios.get(`${API_URL}/api/dashboard`, { 
+        headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        params: { email, role, userId } 
+      }).catch(() => null);
 
-      setBalance(Number(balanceRes.data.balance) || 0);
+      let fetchedBalance = 0;
+      let withdrawalsList = [];
 
-      const withdrawalsList = Array.isArray(historyRes.data) 
-        ? historyRes.data 
-        : (historyRes.data.withdrawals || []);
+      if (dashboardRes && dashboardRes.data) {
+        fetchedBalance = Number(
+          dashboardRes.data.balance !== undefined ? dashboardRes.data.balance :
+          (dashboardRes.data.totalBalance !== undefined ? dashboardRes.data.totalBalance : 
+          (dashboardRes.data.user?.balance || 0))
+        );
+
+        withdrawalsList = dashboardRes.data.withdrawals || dashboardRes.data.withdrawalHistory || [];
+      } else {
+        const [balanceRes, historyRes] = await Promise.all([
+          axios.get(`${API_URL}/api/balance`, { 
+            headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+            params: { email, role, userId } 
+          }).catch(() => axios.get(`${API_URL}/api/team/balance`, { params: { email, role, userId } })),
+          
+          axios.get(`${API_URL}/api/my-withdrawals`, { 
+            headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+            params: { userEmail: email, email, role, userId } 
+          }).catch(() => axios.get(`${API_URL}/api/admin/withdrawals`, { params: { email, role, userId } }))
+        ]);
+
+        fetchedBalance = Number(balanceRes.data.balance || balanceRes.data.totalBalance || 0);
+        withdrawalsList = Array.isArray(historyRes.data) ? historyRes.data : (historyRes.data.withdrawals || historyRes.data.data || []);
+      }
+      
+      setBalance(fetchedBalance);
       setMyWithdrawals(withdrawalsList);
 
       let withdrawnTotal = 0;
@@ -167,7 +193,10 @@ export function WithdrawalForm({ onSuccess }) {
 
   const filteredWithdrawals = myWithdrawals.filter((item) => {
     const userName = (item.user?.name || item.userName || item.name || "N/A").toLowerCase();
-    const matchesSearch = userName.includes(searchTerm.toLowerCase());
+    const userEmail = (item.user?.email || item.userEmail || item.email || "").toLowerCase();
+    const searchTermLower = searchTerm.toLowerCase();
+
+    const matchesSearch = userName.includes(searchTermLower) || userEmail.includes(searchTermLower);
     
     const itemStatus = item.status || 'Pending';
     const matchesStatus = statusFilter === "All" || itemStatus.toLowerCase() === statusFilter.toLowerCase();
@@ -193,13 +222,13 @@ export function WithdrawalForm({ onSuccess }) {
       
       <div className="w-full">
         <h1 className="text-3xl font-extrabold tracking-tight text-gray-900">Withdrawals</h1>
-        <p className="text-sm text-gray-500 mt-1">Manage withdrawal requests</p>
+        <p className="text-sm text-gray-500 mt-1">Manage team withdrawal requests and balances</p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full">
         <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm flex flex-col justify-between w-full">
           <div>
-            <p className="text-[11px] font-bold text-gray-400 tracking-wider">AVAILABLE BALANCE</p>
+            <p className="text-[11px] font-bold text-gray-400 tracking-wider">TEAM AVAILABLE BALANCE</p>
             <div className="flex items-baseline gap-3 mt-2">
               <h2 className="text-4xl font-extrabold text-gray-900">{formatCurrency(balance)}</h2>
             </div>
@@ -292,7 +321,7 @@ export function WithdrawalForm({ onSuccess }) {
       </div>
 
       <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm w-full">
-        <h3 className="text-xl font-bold mb-6 text-gray-900">Payout History</h3>
+        <h3 className="text-xl font-bold mb-6 text-gray-900">Team Payout History</h3>
         
         <div className="w-full overflow-x-auto">
           <table className="w-full text-left text-sm">
@@ -356,7 +385,7 @@ export function WithdrawalForm({ onSuccess }) {
                 <tr>
                   <td colSpan="8" className="text-center py-16 text-gray-400">
                     <Clock className="mx-auto mb-2 opacity-50" size={28} />
-                    No withdrawal history found
+                    No withdrawal history found for team members
                   </td>
                 </tr>
               )}

@@ -405,51 +405,232 @@ app.post('/api/generate-gateway-qr', async (req, res) => {
 // ========== BALANCE ==========
 app.get('/api/balance', async (req, res) => {
   try {
-    const { email, role } = req.query;
-    let query = {};
-    if (!isMaster(role, email) && email) query = { userEmail: email };
+    const { email, role, userId } = req.query;
+    const isMasterUser = isMaster(role, email);
 
-    const transactions = await transactionsCollection.find(query).toArray();
-    const withdrawals = await withdrawalsCollection.find(query).toArray();
+    const isPaid = (status) => {
+      const s = (status || '').toString().toLowerCase().trim();
+      return ['paid', 'success', 'successful', 'completed', 'approved', 'settled', 'confirmed'].includes(s);
+    };
 
-    let totalEarnings = 0;
-    transactions.forEach((t) => {
-      if (isPaidStatus(t.status)) totalEarnings += Number(t.amount || 0);
+    // ===== MY OWN =====
+    const myTxQuery = email
+      ? {
+          $or: [
+            { userEmail: email },
+            { email: email },
+            ...(userId
+              ? [
+                  { userId },
+                  ...(ObjectId.isValid(userId) ? [{ userId: new ObjectId(userId) }] : [])
+                ]
+              : [])
+          ]
+        }
+      : { _id: null };
+
+    const myTransactions = email
+      ? await transactionsCollection.find(myTxQuery).toArray()
+      : [];
+    const myWithdrawals = email
+      ? await withdrawalsCollection.find({
+          $or: [{ userEmail: email }, { email: email }]
+        }).toArray()
+      : [];
+
+    let myOwnEarnings = 0;
+    myTransactions.forEach((t) => {
+      if (isPaid(t.status)) myOwnEarnings += Number(t.amount || 0);
     });
 
-    let totalWithdrawn = 0;
-    let pendingWithdrawn = 0;
-    withdrawals.forEach((w) => {
-      const status = (w.status || 'pending').toLowerCase();
+    let myWithdrawn = 0;
+    let myPending = 0;
+    myWithdrawals.forEach((w) => {
+      const st = (w.status || 'pending').toLowerCase();
       const amt = Number(w.amount || w.originalAmount || 0);
-      if (status === 'paid' || status === 'approved') totalWithdrawn += amt;
-      else if (status === 'pending') pendingWithdrawn += amt;
+      if (st === 'paid' || st === 'approved') myWithdrawn += amt;
+      else if (st === 'pending') myPending += amt;
     });
 
-    let currentBalance = totalEarnings - totalWithdrawn - pendingWithdrawn;
-    if (currentBalance < 0) currentBalance = 0;
+    let myBalance = myOwnEarnings - myWithdrawn - myPending;
+    if (myBalance < 0) myBalance = 0;
+
+    // ===== TEAM scope =====
+    let teamEmails = [];
+
+    if (isMasterUser) {
+      const allUsers = await usersCollection.find({}).project({ email: 1 }).toArray();
+      teamEmails = allUsers.map((u) => u.email).filter(Boolean);
+    } else if (role === 'team_leader') {
+      let leaderId = null;
+      let leaderIdStr = null;
+
+      if (userId && ObjectId.isValid(userId)) {
+        leaderId = new ObjectId(userId);
+        leaderIdStr = userId.toString();
+      } else if (email) {
+        const leader = await usersCollection.findOne({ email });
+        if (leader) {
+          leaderId = leader._id;
+          leaderIdStr = leader._id.toString();
+        }
+      }
+
+      if (leaderId || leaderIdStr) {
+        const teamUsers = await usersCollection
+          .find({
+            $or: [
+              { createdBy: leaderId },
+              { createdBy: leaderIdStr },
+              ...(leaderIdStr && ObjectId.isValid(leaderIdStr)
+                ? [{ createdBy: new ObjectId(leaderIdStr) }]
+                : [])
+            ]
+          })
+          .project({ email: 1 })
+          .toArray();
+
+        teamEmails = teamUsers.map((u) => u.email).filter(Boolean);
+      }
+    }
+
+    let teamTotalEarnings = 0;
+    let teamWithdrawn = 0;
+    let teamPending = 0;
+    let totalBillable = 0;
+    let totalSettled = 0;
+
+    if (teamEmails.length > 0 || isMasterUser) {
+      const teamTxQuery = isMasterUser
+        ? {}
+        : {
+            $or: [
+              { userEmail: { $in: teamEmails } },
+              { email: { $in: teamEmails } }
+            ]
+          };
+
+      const teamWdQuery = isMasterUser
+        ? {}
+        : {
+            $or: [
+              { userEmail: { $in: teamEmails } },
+              { email: { $in: teamEmails } }
+            ]
+          };
+
+      const teamTx = await transactionsCollection.find(teamTxQuery).toArray();
+      const teamWd = await withdrawalsCollection.find(teamWdQuery).toArray();
+
+      teamTx.forEach((t) => {
+        const amt = Number(t.amount || 0);
+        totalBillable += amt;
+
+        if (isPaid(t.status)) {
+          teamTotalEarnings += amt;
+          totalSettled += 1;
+        }
+      });
+
+      teamWd.forEach((w) => {
+        const st = (w.status || 'pending').toLowerCase();
+        const amt = Number(w.amount || w.originalAmount || 0);
+        if (st === 'paid' || st === 'approved') teamWithdrawn += amt;
+        else if (st === 'pending') teamPending += amt;
+      });
+    }
+
+    // ★ AVAILABLE TEAM BALANCE = team earnings - withdrawn - pending
+    let availableTeamBalance = teamTotalEarnings - teamWithdrawn - teamPending;
+    if (availableTeamBalance < 0) availableTeamBalance = 0;
+
+    const totalEarnings = isMasterUser
+      ? teamTotalEarnings
+      : myOwnEarnings + teamTotalEarnings;
+
+    const totalWithdrawn = isMasterUser
+      ? teamWithdrawn
+      : myWithdrawn + teamWithdrawn;
 
     res.json({
-      balance: currentBalance,
-      myOwnEarnings: totalEarnings,
-      teamTotalEarnings: 0,
-      totalEarnings,
+      balance: myBalance,                    // Team Leader নিজের available
+      availableTeamBalance,                  // Team-এর available (withdraw বাদ)
+      totalBillable,
+      totalSettled,
+      myOwnEarnings,                         // Team Leader নিজের total paid
+      teamTotalEarnings,                     // Team-এর total paid (withdraw আগে)
+      totalEarnings,                         // নিজের + team
       totalWithdrawn,
-      pendingWithdrawn
+      pendingWithdrawn: myPending
     });
   } catch (error) {
     console.error('Failed to fetch balance stats:', error);
     res.status(500).json({ error: 'Failed to fetch balance stats' });
   }
 });
-
 // ========== TRANSACTIONS ==========
 app.get('/api/transactions', async (req, res) => {
   try {
     const { userEmail, role, userId } = req.query;
     let query = {};
 
-    if (!isMaster(role, userEmail)) {
+    if (isMaster(role, userEmail)) {
+      // Master → সব দেখতে পারবে
+      query = {};
+    } else if (role === 'team_leader') {
+      // Team Leader → নিজের + under-এর সব user-এর ট্রানজেকশন
+      let leaderId = null;
+      let leaderIdStr = null;
+
+      if (userId && ObjectId.isValid(userId)) {
+        leaderId = new ObjectId(userId);
+        leaderIdStr = userId.toString();
+      } else if (userEmail) {
+        const leader = await usersCollection.findOne({ email: userEmail });
+        if (leader) {
+          leaderId = leader._id;
+          leaderIdStr = leader._id.toString();
+        }
+      }
+
+      const conditions = [];
+
+      // নিজের ট্রানজেকশন
+      if (userEmail) {
+        conditions.push({ userEmail });
+        conditions.push({ email: userEmail });
+      }
+
+      // Under-এর userদের ট্রানজেকশন
+      if (leaderId || leaderIdStr) {
+        const teamUsers = await usersCollection
+          .find({
+            $or: [
+              { createdBy: leaderId },
+              { createdBy: leaderIdStr },
+              ...(leaderIdStr && ObjectId.isValid(leaderIdStr)
+                ? [{ createdBy: new ObjectId(leaderIdStr) }]
+                : [])
+            ]
+          })
+          .project({ email: 1 })
+          .toArray();
+
+        const teamEmails = teamUsers.map((u) => u.email).filter(Boolean);
+
+        if (teamEmails.length > 0) {
+          conditions.push({ userEmail: { $in: teamEmails } });
+          conditions.push({ email: { $in: teamEmails } });
+        }
+      }
+
+      if (conditions.length === 0) {
+        return res.status(400).json({ success: false, error: 'User email or ID is required.' });
+      }
+
+      query = { $or: conditions };
+    } else {
+      // সাধারণ user
       const conditions = [];
       if (userEmail) {
         conditions.push({ userEmail });
@@ -539,33 +720,58 @@ app.post('/api/btcpay/webhook', async (req, res) => {
 // ========== WITHDRAW ==========
 app.post('/api/withdraw', async (req, res) => {
   try {
-    const { amount, userName, userEmail, userId, payoutMethod } = req.body;
-    if (!amount || amount <= 0) {
+    const { amount, userEmail, userName, userId, payoutMethod } = req.body;
+
+    if (!amount || Number(amount) <= 0) {
       return res.status(400).json({ success: false, message: 'Invalid withdrawal amount' });
     }
     if (!userEmail) {
       return res.status(400).json({ success: false, message: 'User email is required' });
     }
 
-    const txQuery = { userEmail };
+    const isPaid = (status) => {
+      const s = (status || '').toString().toLowerCase().trim();
+      return ['paid', 'success', 'successful', 'completed', 'approved', 'settled', 'confirmed'].includes(s);
+    };
+
+    // Paid transactions থেকে earnings
+    const txQuery = {
+      $or: [
+        { userEmail },
+        { email: userEmail },
+        ...(userId
+          ? [
+              { userId },
+              ...(ObjectId.isValid(userId) ? [{ userId: new ObjectId(userId) }] : [])
+            ]
+          : [])
+      ]
+    };
+
     const transactions = await transactionsCollection.find(txQuery).toArray();
-    const withdrawals = await withdrawalsCollection.find(txQuery).toArray();
+    const withdrawals = await withdrawalsCollection
+      .find({ $or: [{ userEmail }, { email: userEmail }] })
+      .toArray();
 
     let totalEarnings = 0;
     transactions.forEach((t) => {
-      if (isPaidStatus(t.status)) totalEarnings += Number(t.amount || 0);
+      if (isPaid(t.status)) totalEarnings += Number(t.amount || 0);
     });
 
     let totalWithdrawn = 0;
     let pendingWithdrawn = 0;
     withdrawals.forEach((w) => {
-      const status = (w.status || 'pending').toLowerCase();
+      const st = (w.status || 'pending').toLowerCase();
       const amt = Number(w.amount || w.originalAmount || 0);
-      if (status === 'paid' || status === 'approved') totalWithdrawn += amt;
-      else if (status === 'pending') pendingWithdrawn += amt;
+      if (st === 'paid' || st === 'approved') totalWithdrawn += amt;
+      else if (st === 'pending') pendingWithdrawn += amt;
     });
 
     const available = totalEarnings - totalWithdrawn - pendingWithdrawn;
+
+    console.log('=== WITHDRAW DEBUG ===');
+    console.log({ userEmail, totalEarnings, totalWithdrawn, pendingWithdrawn, available, requested: amount });
+
     if (Number(amount) > available) {
       return res.status(400).json({
         success: false,
@@ -573,6 +779,7 @@ app.post('/api/withdraw', async (req, res) => {
       });
     }
 
+    // শুধু withdrawal request তৈরি — balance আলাদা ফিল্ডে মাইনাস করার দরকার নেই
     await withdrawalsCollection.insertOne({
       userName: userName || 'User',
       userEmail,
@@ -589,14 +796,14 @@ app.post('/api/withdraw', async (req, res) => {
     res.status(200).json({
       success: true,
       message: 'Withdrawal request submitted successfully',
-      withdrawnAmount: amount
+      withdrawnAmount: Number(amount),
+      availableAfter: available - Number(amount)
     });
-  } catch (error) {
-    console.error('Withdrawal Error:', error);
-    res.status(500).json({ success: false, message: 'Server error during withdrawal' });
+  } catch (err) {
+    console.error('Withdrawal Error:', err);
+    res.status(500).json({ success: false, message: 'Server error', error: err.message });
   }
 });
-
 app.post('/api/withdrawals', async (req, res) => {
   try {
     const { userId, amount, email, name, userEmail, userName, payoutMethod } = req.body;
@@ -695,41 +902,88 @@ app.put('/api/admin/withdrawals/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const { status } = req.body;
+
     if (!ObjectId.isValid(id)) {
       return res.status(400).json({ success: false, message: 'Invalid ID' });
     }
+
+    const withdrawal = await withdrawalsCollection.findOne({ _id: new ObjectId(id) });
+    if (!withdrawal) {
+      return res.status(404).json({ success: false, message: 'Withdrawal not found' });
+    }
+
     const result = await withdrawalsCollection.updateOne(
       { _id: new ObjectId(id) },
       { $set: { status, updatedAt: new Date() } }
     );
+
     if (result.matchedCount === 0) {
       return res.status(404).json({ success: false, message: 'Withdrawal not found' });
     }
+
     res.json({ success: true, message: `Status updated to ${status}` });
   } catch (error) {
-    console.error(error);
+    console.error('Update Withdrawal Error:', error);
     res.status(500).json({ success: false, message: error.message });
   }
 });
 
 // ========== USERS ==========
+// ★★★ এখানেই মূল ফিক্স করা হয়েছে ★★★
+// এখন totalAmount = paid earnings - (approved/paid + pending withdrawals)
 app.get('/api/admin/users', async (req, res) => {
   try {
-    const { role, userId } = req.query;
+    const { role, userId, email } = req.query;
     let query = {};
 
-    if (isMaster(role)) {
+    if (isMaster(role, email)) {
+      // Master → সব user
       query = {};
-    } else if (userId && ObjectId.isValid(userId)) {
-      const uId = new ObjectId(userId);
-      query = { $or: [{ _id: uId }, { createdBy: uId }] };
+    } else if (role === 'team_leader') {
+      // Team Leader → শুধু নিজের তৈরি করা user + নিজে
+      let leaderId = null;
+      let leaderIdStr = null;
+
+      if (userId && ObjectId.isValid(userId)) {
+        leaderId = new ObjectId(userId);
+        leaderIdStr = userId.toString();
+      } else if (email) {
+        const leader = await usersCollection.findOne({ email });
+        if (leader) {
+          leaderId = leader._id;
+          leaderIdStr = leader._id.toString();
+        }
+      }
+
+      if (leaderId || leaderIdStr) {
+        query = {
+          $or: [
+            { _id: leaderId },
+            { createdBy: leaderId },
+            { createdBy: leaderIdStr },
+            ...(leaderIdStr && ObjectId.isValid(leaderIdStr)
+              ? [{ createdBy: new ObjectId(leaderIdStr) }]
+              : [])
+          ]
+        };
+      } else {
+        query = { _id: null };
+      }
     } else {
-      query = {};
+      // সাধারণ user → শুধু নিজে
+      if (userId && ObjectId.isValid(userId)) {
+        query = { _id: new ObjectId(userId) };
+      } else if (email) {
+        query = { email };
+      } else {
+        query = { _id: null };
+      }
     }
 
     const users = await usersCollection
       .aggregate([
         { $match: query },
+        // Paid transactions
         {
           $lookup: {
             from: 'transactions',
@@ -760,12 +1014,85 @@ app.get('/api/admin/users', async (req, res) => {
             as: 'paidTxs'
           }
         },
+        // All withdrawals of this user
         {
-          $addFields: {
-            totalAmount: { $ifNull: [{ $sum: '$paidTxs.amount' }, 0] }
+          $lookup: {
+            from: 'withdrawals',
+            let: { uemail: '$email' },
+            pipeline: [
+              {
+                $match: {
+                  $expr: { $eq: ['$userEmail', '$$uemail'] }
+                }
+              }
+            ],
+            as: 'userWithdrawals'
           }
         },
-        { $project: { password: 0, paidTxs: 0 } }
+        {
+          $addFields: {
+            totalEarnings: { $ifNull: [{ $sum: '$paidTxs.amount' }, 0] },
+            totalWithdrawn: {
+              $sum: {
+                $map: {
+                  input: {
+                    $filter: {
+                      input: '$userWithdrawals',
+                      as: 'w',
+                      cond: {
+                        $in: [
+                          { $toLower: { $ifNull: ['$$w.status', ''] } },
+                          ['paid', 'approved']
+                        ]
+                      }
+                    }
+                  },
+                  as: 'w',
+                  in: { $ifNull: ['$$w.amount', { $ifNull: ['$$w.originalAmount', 0] }] }
+                }
+              }
+            },
+            pendingWithdrawn: {
+              $sum: {
+                $map: {
+                  input: {
+                    $filter: {
+                      input: '$userWithdrawals',
+                      as: 'w',
+                      cond: {
+                        $eq: [{ $toLower: { $ifNull: ['$$w.status', ''] } }, 'pending']
+                      }
+                    }
+                  },
+                  as: 'w',
+                  in: { $ifNull: ['$$w.amount', { $ifNull: ['$$w.originalAmount', 0] }] }
+                }
+              }
+            }
+          }
+        },
+        {
+          $addFields: {
+            totalAmount: {
+              $max: [
+                {
+                  $subtract: [
+                    '$totalEarnings',
+                    { $add: ['$totalWithdrawn', '$pendingWithdrawn'] }
+                  ]
+                },
+                0
+              ]
+            }
+          }
+        },
+        {
+          $project: {
+            password: 0,
+            paidTxs: 0,
+            userWithdrawals: 0
+          }
+        }
       ])
       .toArray();
 
@@ -805,7 +1132,8 @@ app.get('/api/admin/users-summary', async (req, res) => {
           totalEarnings,
           totalWithdrawn,
           pendingWithdrawn,
-          availableBalance: availableBalance > 0 ? availableBalance : 0
+          availableBalance: availableBalance > 0 ? availableBalance : 0,
+          totalAmount: availableBalance > 0 ? availableBalance : 0 // frontend compatibility
         };
       })
     );
@@ -1035,6 +1363,54 @@ app.get('/og/:username', async (req, res) => {
   } catch (err) {
     console.error('OG image error:', err);
     return res.status(500).send('Error');
+  }
+});
+// ব্যাকএন্ড এক্সাম্পল (server.js বা আপনার কন্ট্রোলারে)
+app.get('/api/team-leader/withdrawals', async (req, res) => {
+  try {
+    const { email, userId } = req.query; // টিম লিডারের ইমেইল বা আইডি
+
+    // ১. টিম লিডার যে ইউজারগুলোকে ক্রিয়েট করেছে তাদের খুঁজে বের করুন
+    const teamUsers = await User.find({ 
+      $or: [{ createdBy: email }, { teamLeaderId: userId }, { leaderEmail: email }] 
+    });
+
+    const userEmails = teamUsers.map(u => u.email);
+    if (email) {
+      userEmails.push(email); // টিম লিডার নিজেরটাও যুক্ত করা হলো
+    }
+
+    // ২. ওই ইউজারগুলোর উইথড্রয়াল রিকোয়েস্টগুলো ফেচ করুন
+    const withdrawals = await Withdrawal.find({ 
+      userEmail: { $in: userEmails } 
+    }).sort({ createdAt: -1 });
+
+    // ৩. ওই ইউজারগুলোর মোট ব্যালেন্স হিসাব করুন (টিম লিডারসহ)
+    let totalTeamBalance = 0;
+    
+    // টিম মেম্বারদের ব্যালেন্স যোগ করা
+    teamUsers.forEach(u => {
+      totalTeamBalance += Number(u.balance || 0);
+    });
+
+    // যদি টিম লিডার নিজেই ইউজার লিস্টে না থাকে, তবে তার নিজের ব্যালেন্স আলাদাভাবে যোগ করতে পারেন
+    const selfUser = teamUsers.find(u => u.email === email);
+    if (!selfUser && email) {
+      const leaderDoc = await User.findOne({ email });
+      if (leaderDoc) {
+        totalTeamBalance += Number(leaderDoc.balance || 0);
+      }
+    }
+
+    res.status(200).json({
+      success: true,
+      balance: totalTeamBalance,
+      withdrawals: withdrawals
+    });
+
+  } catch (err) {
+    console.error("Team withdrawals error:", err);
+    res.status(500).json({ message: "Server error" });
   }
 });
 

@@ -19,9 +19,9 @@ export const CreateQrForm = () => {
     let storedUser = {};
     try {
       const rawData = localStorage.getItem('userInfo') || 
-                      localStorage.getItem('user') || 
-                      localStorage.getItem('admin') || 
-                      localStorage.getItem('merchant');
+                    localStorage.getItem('user') || 
+                    localStorage.getItem('admin') || 
+                    localStorage.getItem('merchant');
       storedUser = rawData ? JSON.parse(rawData) : {};
     } catch (e) {
       storedUser = {};
@@ -45,7 +45,19 @@ export const CreateQrForm = () => {
       .then(res => res.json())
       .then(data => {
         const items = data.success ? data.transactions : (Array.isArray(data) ? data : (data.links || []));
-        setLinkList(items);
+        
+        // Duplicate _id ফিল্টার
+        const seen = new Set();
+        const uniqueItems = (Array.isArray(items) ? items : []).filter((item) => {
+          const id = item?._id || item?.id;
+          if (!id) return true;
+          const idStr = String(id);
+          if (seen.has(idStr)) return false;
+          seen.add(idStr);
+          return true;
+        });
+
+        setLinkList(uniqueItems);
       })
       .catch(err => console.error('Error fetching links:', err));
   };
@@ -66,7 +78,7 @@ export const CreateQrForm = () => {
         Swal.fire({
           icon: 'warning',
           title: 'Invalid Format',
-          text: 'Invoice format not recognized.',
+          text: 'Payment link format not recognized.',
           confirmButtonColor: '#00D54B'
         });
       }
@@ -74,7 +86,7 @@ export const CreateQrForm = () => {
       Swal.fire({
         icon: 'warning',
         title: 'Not Ready',
-        text: 'Lightning invoice is not ready yet!',
+        text: 'Payment link is not ready yet!',
         confirmButtonColor: '#00D54B'
       });
     }
@@ -116,17 +128,14 @@ export const CreateQrForm = () => {
       const data = await response.json();
 
       if (data.success) {
-        const lnInvoice = data.bolt11 || data.lightningInvoice || data.lnInvoice || '';
+        // ব্যাকএন্ড থেকে আসা পেমেন্ট বা চেকআউট লিংক সরাসরি QR-এর জন্য সেট করা হলো
+        const paymentUrl = data.checkoutLink || data.paymentUrl || data.url || '';
 
-        const qrValue = (lnInvoice && lnInvoice.startsWith('lnbc')) 
-          ? `https://cash.app/launch/lightning/${lnInvoice}` 
-          : (data.checkoutLink || '');
-
-        if (!qrValue) {
+        if (!paymentUrl) {
           Swal.fire({
             icon: 'error',
-            title: 'No Invoice',
-            text: 'Server did not return a valid invoice. Check BTCPay config.',
+            title: 'No Payment Link',
+            text: 'Server did not return a valid payment link.',
             confirmButtonColor: '#00D54B',
           });
           setLoading(false);
@@ -134,15 +143,15 @@ export const CreateQrForm = () => {
         }
 
         setCurrentAmount(amount);
-        setGeneratedLink(data.checkoutLink || '');
-        setLightningInvoice(qrValue);
+        setGeneratedLink(paymentUrl);
+        setLightningInvoice(paymentUrl); // এটি QR-এ এনকোড হবে এবং স্ক্যান করলে সরাসরি পেমেন্ট লিংকে নিয়ে যাবে
         fetchLinks();
         setAmount("");
         
         Swal.fire({
           icon: 'success',
           title: 'QR Generated!',
-          text: `Lightning QR generated for $${amount}`,
+          text: `CashApp style QR generated for $${amount}`,
           confirmButtonColor: '#00D54B',
           timer: 1400,
           showConfirmButton: false
@@ -178,8 +187,8 @@ export const CreateQrForm = () => {
             <div className="flex items-center gap-1.5 text-green-600 font-bold text-[11px] uppercase tracking-wider mb-0.5">
               <Zap size={13} /> CashApp Style Gateway
             </div>
-            <h1 className="text-xl sm:text-2xl font-extrabold text-gray-900 tracking-tight">Create Lightning QR</h1>
-            <p className="text-xs text-gray-400 mt-0.5">Generate dynamic amount lnbc invoice QRs instantly.</p>
+            <h1 className="text-xl sm:text-2xl font-extrabold text-gray-900 tracking-tight">Create CashApp QR</h1>
+            <p className="text-xs text-gray-400 mt-0.5">Generate dynamic amount payment QRs instantly.</p>
           </div>
           <div className="bg-green-50 text-green-700 px-3.5 py-1.5 rounded-xl font-bold text-xs border border-green-100 flex items-center gap-1.5 shadow-sm">
             <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
@@ -190,7 +199,7 @@ export const CreateQrForm = () => {
         {/* Form */}
         <div className="bg-white p-4 sm:p-6 md:p-8 rounded-2xl shadow-sm border border-gray-100/80 space-y-5">
           <div>
-            <h2 className="text-lg font-bold text-gray-900">New Lightning Invoice</h2>
+            <h2 className="text-lg font-bold text-gray-900">New Payment Invoice</h2>
             <p className="text-xs text-gray-400 mt-0.5">Enter amount to create dynamic payment QR.</p>
           </div>
           
@@ -233,15 +242,15 @@ export const CreateQrForm = () => {
               className="w-full bg-[#00D54B] text-white py-3.5 rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-[#02b841] transition-all disabled:opacity-50 cursor-pointer shadow-lg shadow-green-200/50 text-sm"
             >
               {loading ? <Loader2 className="animate-spin" size={17} /> : <QrCode size={17} />} 
-              {loading ? 'Generating...' : 'Generate CashApp Lightning QR'}
+              {loading ? 'Generating...' : 'Generate CashApp Payment QR'}
             </button>
           </form>
         </div>
 
-        {/* CashApp Style QR Card */}
+        {/* CashApp Style Modal / Popup Card */}
         {lightningInvoice && (
-          <div className="w-full max-w-sm mx-auto mb-8 animate-in fade-in zoom-in duration-300">
-            <div className="bg-[#00D54B] rounded-[36px] shadow-2xl overflow-hidden flex flex-col items-center pt-8 pb-8 px-6 relative select-none">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+            <div className="w-full max-w-sm bg-[#00D54B] rounded-[36px] shadow-2xl overflow-hidden flex flex-col items-center pt-8 pb-8 px-6 relative select-none animate-in zoom-in-95 duration-200">
               
               {/* Close Button */}
               <button
@@ -251,7 +260,7 @@ export const CreateQrForm = () => {
                   setCurrentAmount("");
                 }}
                 className="absolute top-5 left-5 text-white/80 hover:text-white bg-black/10 hover:bg-black/20 p-2 rounded-full transition-all cursor-pointer"
-                title="Create another"
+                title="Close"
               >
                 <X size={20} strokeWidth={3} />
               </button>
@@ -291,7 +300,7 @@ export const CreateQrForm = () => {
                   Swal.fire({
                     icon: "success",
                     title: "Copied!",
-                    text: "Invoice copied to clipboard",
+                    text: "Payment link copied to clipboard",
                     timer: 1200,
                     showConfirmButton: false,
                     confirmButtonColor: "#00D54B",
@@ -300,7 +309,7 @@ export const CreateQrForm = () => {
                 className="w-full max-w-[260px] flex items-center justify-center gap-2.5 bg-white/20 hover:bg-white/30 text-white py-4 rounded-[20px] text-[15px] font-bold transition-all backdrop-blur-sm shadow-sm cursor-pointer"
               >
                 <Copy size={18} strokeWidth={2.5} />
-                Copy Lightning Invoice
+                Copy Payment Link
               </button>
             </div>
           </div>
@@ -311,7 +320,7 @@ export const CreateQrForm = () => {
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mb-5">
             <div>
               <h2 className="text-lg font-bold text-gray-900">Payment History</h2>
-              <p className="text-xs text-gray-400 mt-0.5">Previous generated lightning invoices.</p>
+              <p className="text-xs text-gray-400 mt-0.5">Previous generated payment invoices.</p>
             </div>
             <span className="text-xs font-bold px-3 py-1 bg-gray-100 text-gray-600 rounded-xl">
               Total: {linkList.length}
@@ -321,12 +330,13 @@ export const CreateQrForm = () => {
           <div className="space-y-3 max-h-[500px] overflow-y-auto pr-1">
             {linkList.length > 0 ? (
               linkList.map((item, index) => {
-                const itemLink = item.bolt11 || item.lightningInvoice || item.lnInvoice || item.checkoutLink || '';
+                const itemLink = item.bolt11 || item.lightningInvoice || item.lnInvoice || item.checkoutLink || item.paymentUrl || '';
                 const isPaid = item.status === 'Paid' || item.status === 'Success' || item.status === 'Settled';
+                const uniqueKey = `${item._id || item.id || 'inv'}-${index}`;
                 
                 return (
                   <div 
-                    key={item.id || item._id || index} 
+                    key={uniqueKey} 
                     className="p-3.5 rounded-2xl border border-gray-100 hover:border-green-200 hover:shadow-sm transition-all bg-gray-50/40 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 group"
                   >
                     <div className="space-y-0.5 w-full sm:w-auto overflow-hidden">
@@ -344,7 +354,7 @@ export const CreateQrForm = () => {
                         </span>
                       </div>
                       <p className="text-[11px] text-gray-500 font-mono truncate max-w-[250px] sm:max-w-md">
-                        {itemLink ? (itemLink.length > 40 ? itemLink.slice(0, 28) + '...' + itemLink.slice(-8) : itemLink) : 'No invoice'}
+                        {itemLink ? (itemLink.length > 40 ? itemLink.slice(0, 28) + '...' + itemLink.slice(-8) : itemLink) : 'No link'}
                       </p>
                       <p className="text-[10px] text-gray-400 flex items-center gap-1 font-medium">
                         <Clock size={10} /> {item.createdAt ? new Date(item.createdAt).toLocaleString() : 'Recent'}
@@ -375,4 +385,4 @@ export const CreateQrForm = () => {
       </div>
     </div>
   );
-};
+}
