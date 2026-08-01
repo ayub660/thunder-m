@@ -99,7 +99,16 @@ export function WithdrawalForm({ onSuccess }) {
           }).catch(() => axios.get(`${API_URL}/api/admin/withdrawals`, { params: { email, role, userId } }))
         ]);
 
-        fetchedBalance = Number(balanceRes.data.balance || balanceRes.data.totalBalance || 0);
+        // ========== ফিক্স এখানে ==========
+        const isTeamLeader = (role || '').toLowerCase() === 'team_leader';
+
+        fetchedBalance = Number(
+          isTeamLeader 
+            ? (balanceRes.data.availableTeamBalance ?? balanceRes.data.balance ?? 0)
+            : (balanceRes.data.balance ?? balanceRes.data.totalBalance ?? 0)
+        );
+        // ========== ফিক্স শেষ ==========
+
         withdrawalsList = Array.isArray(historyRes.data) ? historyRes.data : (historyRes.data.withdrawals || historyRes.data.data || []);
       }
       
@@ -393,12 +402,11 @@ export function WithdrawalForm({ onSuccess }) {
         </div>
       </div>
 
-      {/* ====================== WITHDRAWAL MODAL (Monkey Animation added) ====================== */}
+      {/* ====================== WITHDRAWAL MODAL ====================== */}
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm w-full h-full">
           <div className="bg-white rounded-3xl w-full max-w-lg p-8 shadow-2xl space-y-6 relative overflow-hidden">
             
-            {/* Cute Monkey Animation */}
             <div className="flex justify-center -mt-2 mb-1">
               <div className="relative">
                 <div className="text-7xl animate-bounce select-none" style={{ animationDuration: '1.4s' }}>

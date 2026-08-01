@@ -408,7 +408,10 @@ app.post('/api/generate-gateway-qr', async (req, res) => {
 app.get('/api/balance', async (req, res) => {
   try {
     const { email, role, userId } = req.query;
-    const isMasterUser = isMaster(role, email);
+    
+    // শুধু এই লাইনটা যোগ করা হয়েছে (case-insensitive করার জন্য)
+    const normalizedRole = (role || '').toString().toLowerCase().trim();
+    const isMasterUser = isMaster(normalizedRole, email);
 
     const isPaid = (status) => {
       const s = (status || '').toString().toLowerCase().trim();
@@ -467,7 +470,7 @@ app.get('/api/balance', async (req, res) => {
     if (isMasterUser) {
       const allUsers = await usersCollection.find({}).project({ email: 1 }).toArray();
       teamEmails = allUsers.map((u) => u.email).filter(Boolean);
-    } else if (role === 'team_leader') {
+    } else if (normalizedRole === 'team_leader') {   // এখানে শুধু normalizedRole ব্যবহার করা হয়েছে
       let leaderId = null;
       let leaderIdStr = null;
 
@@ -555,6 +558,17 @@ app.get('/api/balance', async (req, res) => {
 
     // ★ AVAILABLE TEAM BALANCE
     let availableTeamBalance = teamTotalEarnings - teamWithdrawn - teamPending;
+
+    // ========== শুধু এই অংশ যোগ করা হয়েছে ==========
+    // Team Leader-এর নিজের উপর Admin Payout / Withdrawal হলে সেটাও কাটবে
+    if (normalizedRole === 'team_leader' && email) {
+      myWithdrawals.forEach((w) => {
+        const amt = Number(w.amount || w.originalAmount || 0);
+        availableTeamBalance -= amt;
+      });
+    }
+    // ========== যোগ করা অংশ শেষ ==========
+
     if (availableTeamBalance < 0) availableTeamBalance = 0;
 
     // ★★★ MASTER ADMIN এর জন্য ★★★
@@ -753,43 +767,132 @@ app.post('/api/withdraw', async (req, res) => {
       return ['paid', 'success', 'successful', 'completed', 'approved', 'settled', 'confirmed'].includes(s);
     };
 
-    // Paid transactions থেকে earnings
-    const txQuery = {
-      $or: [
-        { userEmail },
-        { email: userEmail },
-        ...(userId
-          ? [
-              { userId },
-              ...(ObjectId.isValid(userId) ? [{ userId: new ObjectId(userId) }] : [])
-            ]
-          : [])
-      ]
-    };
+    // User-এর role বের করা
+    let userRole = '';
+    let leaderId = null;
+    let leaderIdStr = null;
 
-    const transactions = await transactionsCollection.find(txQuery).toArray();
-    const withdrawals = await withdrawalsCollection
-      .find({ $or: [{ userEmail }, { email: userEmail }] })
-      .toArray();
+    if (userId && ObjectId.isValid(userId)) {
+      const user = await usersCollection.findOne({ _id: new ObjectId(userId) });
+      if (user) {
+        userRole = (user.role || '').toString().toLowerCase().trim();
+        leaderId = user._id;
+        leaderIdStr = user._id.toString();
+      }
+    } else {
+      const user = await usersCollection.findOne({ email: userEmail });
+      if (user) {
+        userRole = (user.role || '').toString().toLowerCase().trim();
+        leaderId = user._id;
+        leaderIdStr = user._id.toString();
+      }
+    }
 
-    let totalEarnings = 0;
-    transactions.forEach((t) => {
-      if (isPaid(t.status)) totalEarnings += Number(t.amount || 0);
-    });
+    const isTeamLeader = userRole === 'team_leader';
 
-    let totalWithdrawn = 0;
-    let pendingWithdrawn = 0;
-    withdrawals.forEach((w) => {
-      const st = (w.status || 'pending').toLowerCase();
-      const amt = Number(w.amount || w.originalAmount || 0);
-      if (st === 'paid' || st === 'approved') totalWithdrawn += amt;
-      else if (st === 'pending') pendingWithdrawn += amt;
-    });
+    let available = 0;
 
-    const available = totalEarnings - totalWithdrawn - pendingWithdrawn;
+    if (isTeamLeader && (leaderId || leaderIdStr)) {
+      // ========== TEAM LEADER → Team Balance হিসাব ==========
+      const teamUsers = await usersCollection
+        .find({
+          $or: [
+            { createdBy: leaderId },
+            { createdBy: leaderIdStr },
+            ...(leaderIdStr && ObjectId.isValid(leaderIdStr)
+              ? [{ createdBy: new ObjectId(leaderIdStr) }]
+              : [])
+          ]
+        })
+        .project({ email: 1 })
+        .toArray();
+
+      const teamEmails = teamUsers.map((u) => u.email).filter(Boolean);
+
+      const teamTx = await transactionsCollection
+        .find({
+          $or: [
+            { userEmail: { $in: teamEmails } },
+            { email: { $in: teamEmails } }
+          ]
+        })
+        .toArray();
+
+      const teamWd = await withdrawalsCollection
+        .find({
+          $or: [
+            { userEmail: { $in: teamEmails } },
+            { email: { $in: teamEmails } }
+          ]
+        })
+        .toArray();
+
+      let teamTotalEarnings = 0;
+      teamTx.forEach((t) => {
+        if (isPaid(t.status)) teamTotalEarnings += Number(t.amount || 0);
+      });
+
+      let teamWithdrawn = 0;
+      let teamPending = 0;
+      teamWd.forEach((w) => {
+        const st = (w.status || 'pending').toLowerCase().trim();
+        const amt = Number(w.amount || w.originalAmount || 0);
+        if (['paid', 'approved', 'success', 'successful', 'completed', 'settled', 'confirmed'].includes(st)) {
+          teamWithdrawn += amt;
+        } else {
+          teamPending += amt;
+        }
+      });
+
+      available = teamTotalEarnings - teamWithdrawn - teamPending;
+      if (available < 0) available = 0;
+
+    } else {
+      // ========== সাধারণ User → তোমার আগের লজিক হুবহু ==========
+      const txQuery = {
+        $or: [
+          { userEmail },
+          { email: userEmail },
+          ...(userId
+            ? [
+                { userId },
+                ...(ObjectId.isValid(userId) ? [{ userId: new ObjectId(userId) }] : [])
+              ]
+            : [])
+        ]
+      };
+
+      const transactions = await transactionsCollection.find(txQuery).toArray();
+      const withdrawals = await withdrawalsCollection
+        .find({ $or: [{ userEmail }, { email: userEmail }] })
+        .toArray();
+
+      let totalEarnings = 0;
+      transactions.forEach((t) => {
+        if (isPaid(t.status)) totalEarnings += Number(t.amount || 0);
+      });
+
+      let totalWithdrawn = 0;
+      let pendingWithdrawn = 0;
+      withdrawals.forEach((w) => {
+        const st = (w.status || 'pending').toLowerCase();
+        const amt = Number(w.amount || w.originalAmount || 0);
+        if (st === 'paid' || st === 'approved') totalWithdrawn += amt;
+        else if (st === 'pending') pendingWithdrawn += amt;
+      });
+
+      available = totalEarnings - totalWithdrawn - pendingWithdrawn;
+      if (available < 0) available = 0;
+    }
 
     console.log('=== WITHDRAW DEBUG ===');
-    console.log({ userEmail, totalEarnings, totalWithdrawn, pendingWithdrawn, available, requested: amount });
+    console.log({
+      userEmail,
+      userRole,
+      isTeamLeader,
+      available,
+      requested: amount
+    });
 
     if (Number(amount) > available) {
       return res.status(400).json({
