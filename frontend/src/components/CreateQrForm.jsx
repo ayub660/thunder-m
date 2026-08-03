@@ -11,9 +11,9 @@ export const CreateQrForm = () => {
   const [loading, setLoading] = useState(false);
   const [linkList, setLinkList] = useState([]);
 
-  const API_URL = import.meta.env.MODE === 'production' 
-    ? 'https://thunder-m.vercel.app' 
-    : 'http://localhost:5000';
+  // ========== ENV ==========
+  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+  const MASTER_ADMIN_EMAIL = import.meta.env.VITE_MASTER_ADMIN_EMAIL || 'admin@mamun.com';
 
   const getCurrentUserInfo = () => {
     let storedUser = {};
@@ -32,7 +32,7 @@ export const CreateQrForm = () => {
     let role = storedUser.role || storedUser.isAdmin || localStorage.getItem('role') || '';
 
     if (!role) {
-      role = (userEmail === 'admin@mamun.com') ? 'master' : 'user';
+      role = (userEmail === MASTER_ADMIN_EMAIL) ? 'master' : 'user';
     }
 
     return { userId, userEmail, role };
@@ -385,4 +385,4 @@ export const CreateQrForm = () => {
       </div>
     </div>
   );
-}
+};

@@ -10,17 +10,44 @@ export const WithdrawalsAdmin = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
 
-  const API_URL =
-    import.meta.env.MODE === 'production'
-      ? 'https://thunder-m.vercel.app'
-      : 'http://localhost:5000';
+ // ========== ENV ==========
+  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+
+  const getAuth = useCallback(() => {
+    let email = localStorage.getItem('userEmail') || localStorage.getItem('email') || localStorage.getItem('adminEmail') || '';
+    let role = localStorage.getItem('role') || localStorage.getItem('userRole') || '';
+    let userId = localStorage.getItem('userId') || localStorage.getItem('id') || '';
+
+    try {
+      const raw = localStorage.getItem('userInfo') || localStorage.getItem('user') || localStorage.getItem('admin');
+      if (raw) {
+        const u = JSON.parse(raw);
+        if (!email) email = u.email || u.userEmail || '';
+        if (!role) role = u.role || '';
+        if (!userId) userId = (u.id || u._id || u.userId || '').toString();
+      }
+    } catch (e) {}
+
+    role = (role || '').toLowerCase().trim();
+    if (role === 'masteradmin' || role === 'master') role = 'master_admin';
+    if (role === 'teamleader' || role === 'team_leader') role = 'team_leader';
+
+    return { email, role, userId };
+  }, []);
 
   const fetchWithdrawals = useCallback(async () => {
     try {
       setLoading(true);
       const token = localStorage.getItem('token') || localStorage.getItem('adminToken');
+      const { email, role, userId } = getAuth();
 
-      const res = await fetch(`${API_URL}/api/admin/withdrawals`, {
+      const params = new URLSearchParams({
+        email: email || '',
+        role: role || '',
+        userId: userId || ''
+      });
+
+      const res = await fetch(`${API_URL}/api/admin/withdrawals?${params.toString()}`, {
         headers: {
           'Content-Type': 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {})
@@ -28,26 +55,26 @@ export const WithdrawalsAdmin = () => {
       });
       const data = await res.json();
 
+      let list = [];
       if (Array.isArray(data)) {
-        setWithdrawals(data);
+        list = data;
       } else if (data.withdrawals && Array.isArray(data.withdrawals)) {
-        setWithdrawals(data.withdrawals);
-      } else {
-        setWithdrawals([]);
+        list = data.withdrawals;
       }
+
+      setWithdrawals(list);
     } catch (err) {
       console.error('Error fetching withdrawals:', err);
       setWithdrawals([]);
     } finally {
       setLoading(false);
     }
-  }, [API_URL]);
+  }, [API_URL, getAuth]);
 
   useEffect(() => {
     fetchWithdrawals();
   }, [fetchWithdrawals]);
 
-  // ইউজারের আসল available balance বের করা
   const getUserAvailableBalance = async (userEmail) => {
     try {
       const res = await fetch(
@@ -63,8 +90,8 @@ export const WithdrawalsAdmin = () => {
 
   const handleUpdateStatus = async (id, newStatus, item) => {
     const requestedAmount = Number(item?.originalAmount || item?.amount || 0);
+    const { email, role, userId } = getAuth();
 
-    // Pay করার আগে amount valid কি না
     if (newStatus === 'Paid') {
       if (requestedAmount <= 0) {
         return Swal.fire({
@@ -74,15 +101,10 @@ export const WithdrawalsAdmin = () => {
         });
       }
 
-      // আসল balance চেক (optional but correct)
       const userEmail = item.userEmail || item.email;
       if (userEmail) {
         const available = await getUserAvailableBalance(userEmail);
 
-        // Pending withdrawal নিজেই hold করা — Paid করার সময় pending থেকে paid হয়
-        // তাই available + এই request amount >= request হলে OK
-        // (কারণ এই pending amount already deducted in available calc)
-        // Simple rule: if balance API fails, still allow admin to mark Paid
         if (available !== null && available < 0) {
           return Swal.fire({
             icon: 'error',
@@ -107,7 +129,14 @@ export const WithdrawalsAdmin = () => {
 
     try {
       const token = localStorage.getItem('token') || localStorage.getItem('adminToken');
-      const res = await fetch(`${API_URL}/api/admin/withdrawals/${id}`, {
+
+      const params = new URLSearchParams({
+        email: email || '',
+        role: role || '',
+        userId: userId || ''
+      });
+
+      const res = await fetch(`${API_URL}/api/admin/withdrawals/${id}?${params.toString()}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -160,10 +189,11 @@ export const WithdrawalsAdmin = () => {
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Withdrawal Requests</h1>
         <p className="text-xs text-gray-500 mt-1">
-          Review user payment requests and banking/payout details from database.
+          Review Team Leaders' and your created users' payment requests.
         </p>
       </div>
 
+      {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
         <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
           <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">
@@ -172,7 +202,7 @@ export const WithdrawalsAdmin = () => {
           <h3 className="text-3xl font-black text-gray-900 mt-2">
             ${totalRequestsAmount.toLocaleString()}
           </h3>
-          <p className="text-[11px] text-gray-400 mt-1">Total amount requested by users</p>
+          <p className="text-[11px] text-gray-400 mt-1">Total amount requested</p>
         </div>
 
         <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
@@ -182,7 +212,7 @@ export const WithdrawalsAdmin = () => {
           <h3 className="text-3xl font-black text-green-600 mt-2">
             ${totalWithdrawn.toLocaleString()}
           </h3>
-          <p className="text-[11px] text-gray-400 mt-1">Successfully paid out to users</p>
+          <p className="text-[11px] text-gray-400 mt-1">Successfully paid out</p>
         </div>
 
         <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
@@ -192,10 +222,11 @@ export const WithdrawalsAdmin = () => {
           <h3 className="text-3xl font-black text-amber-500 mt-2">
             ${totalPending.toLocaleString()}
           </h3>
-          <p className="text-[11px] text-gray-400 mt-1">Amount awaiting payment review</p>
+          <p className="text-[11px] text-gray-400 mt-1">Amount awaiting review</p>
         </div>
       </div>
 
+      {/* Search + Filter */}
       <div className="bg-white p-4 rounded-3xl border border-gray-100 shadow-sm mb-6 flex flex-col md:flex-row gap-4 items-center justify-between">
         <div className="relative w-full md:w-96">
           <Search className="absolute left-4 top-3.5 text-gray-400" size={18} />
@@ -230,6 +261,7 @@ export const WithdrawalsAdmin = () => {
         </div>
       </div>
 
+      {/* Table */}
       <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
@@ -344,7 +376,7 @@ export const WithdrawalsAdmin = () => {
                 <tr>
                   <td colSpan="6" className="p-16 text-center text-gray-400">
                     <Clock size={36} className="mx-auto mb-2 opacity-30" />
-                    <p className="font-medium text-sm">No payment requests found in database.</p>
+                    <p className="font-medium text-sm">No payment requests found.</p>
                   </td>
                 </tr>
               )}
@@ -352,6 +384,7 @@ export const WithdrawalsAdmin = () => {
           </table>
         </div>
 
+        {/* Pagination */}
         {!loading && filteredWithdrawals.length > itemsPerPage && (
           <div className="p-4 border-t border-gray-100 flex items-center justify-between">
             <span className="text-xs text-gray-500 font-medium">

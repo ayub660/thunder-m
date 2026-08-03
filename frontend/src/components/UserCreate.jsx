@@ -12,9 +12,9 @@ export const UserCreate = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
 
-  const API_URL = import.meta.env.MODE === 'production'
-    ? 'https://thunder-m.vercel.app'
-    : 'http://localhost:5000';
+  // ========== ENV ==========
+  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+  const MASTER_ADMIN_EMAIL = import.meta.env.VITE_MASTER_ADMIN_EMAIL || 'admin@mamun.com';
 
   const getCurrentUser = () => {
     try {
@@ -40,7 +40,7 @@ export const UserCreate = () => {
 
   const currentUser = getCurrentUser();
   const currentRole = currentUser.role;
-  const isMasterAdmin = currentRole === 'master_admin' || currentUser.email === 'admin@mamun.com';
+  const isMasterAdmin = currentRole === 'master_admin' || currentUser.email === MASTER_ADMIN_EMAIL;
   const isTeamLeader = currentRole === 'team_leader';
   const canManageUsers = isMasterAdmin || isTeamLeader;
 
@@ -151,6 +151,17 @@ export const UserCreate = () => {
 
     if (!formData.name || !formData.email) {
       return Swal.fire('Warning', 'Name and Email are required!', 'warning');
+    }
+
+    // Name already use হয়েছে কিনা check
+    const nameExists = users.some(
+      (u) =>
+        u.name?.toLowerCase().trim() === formData.name.toLowerCase().trim() &&
+        String(u._id || u.id) !== String(editingUserId)
+    );
+
+    if (nameExists) {
+      return Swal.fire('Warning', 'This name is already used!', 'warning');
     }
 
     if (!editingUserId && !formData.password) {

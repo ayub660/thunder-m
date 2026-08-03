@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
-import { AlertTriangle, Wallet, CheckCircle2, Clock, Eye, Filter, Plus } from "lucide-react";
+import { AlertTriangle, Wallet, CheckCircle2, Clock, Eye, Filter, Plus, ThumbsUp } from "lucide-react";
+import Swal from 'sweetalert2';
 
 const formatCurrency = (val, currency = 'USD') => {
   return new Intl.NumberFormat('en-US', {
@@ -31,9 +32,8 @@ export function WithdrawalForm({ onSuccess }) {
   const [selectedWithdrawal, setSelectedWithdrawal] = useState(null);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
 
-  const API_URL = import.meta.env.MODE === 'production' 
-    ? 'https://thunder-m.vercel.app' 
-    : 'http://localhost:5000';
+  // ========== ENV ==========
+  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
   const getAuth = useCallback(() => {
     let email = localStorage.getItem('userEmail') || localStorage.getItem('email') || localStorage.getItem('adminEmail') || '';
@@ -54,8 +54,15 @@ export function WithdrawalForm({ onSuccess }) {
       console.error("Failed to parse user info from localStorage", e);
     }
 
+    role = (role || '').toLowerCase().trim();
+    if (role === 'teamleader' || role === 'team_leader') role = 'team_leader';
+    if (role === 'masteradmin' || role === 'master') role = 'master_admin';
+
     return { email, role, userId, name };
   }, []);
+
+  const { role } = getAuth();
+  const isTeamLeader = role === 'team_leader';
 
   const fetchData = useCallback(async () => {
     try {
@@ -99,15 +106,13 @@ export function WithdrawalForm({ onSuccess }) {
           }).catch(() => axios.get(`${API_URL}/api/admin/withdrawals`, { params: { email, role, userId } }))
         ]);
 
-        // ========== ফিক্স এখানে ==========
-        const isTeamLeader = (role || '').toLowerCase() === 'team_leader';
+        const isTL = (role || '').toLowerCase() === 'team_leader';
 
         fetchedBalance = Number(
-          isTeamLeader 
+          isTL 
             ? (balanceRes.data.availableTeamBalance ?? balanceRes.data.balance ?? 0)
             : (balanceRes.data.balance ?? balanceRes.data.totalBalance ?? 0)
         );
-        // ========== ফিক্স শেষ ==========
 
         withdrawalsList = Array.isArray(historyRes.data) ? historyRes.data : (historyRes.data.withdrawals || historyRes.data.data || []);
       }
@@ -143,6 +148,53 @@ export function WithdrawalForm({ onSuccess }) {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  // ========== APPROVE FUNCTION (শুধু Team Leader) ==========
+  const handleApprove = async (id, item) => {
+    const result = await Swal.fire({
+      title: 'Approve Withdrawal?',
+      text: 'Are you sure you want to approve this withdrawal? It will be marked as Paid.',
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonColor: '#10B981',
+      cancelButtonColor: '#6B7280',
+      confirmButtonText: 'Yes, Approve & Pay!'
+    });
+
+    if (!result.isConfirmed) return;
+
+    try {
+      const token = localStorage.getItem('token') || localStorage.getItem('adminToken');
+      const { email, role, userId } = getAuth();
+
+      const params = new URLSearchParams({
+        email: email || '',
+        role: role || '',
+        userId: userId || ''
+      });
+
+      const res = await axios.put(
+        `${API_URL}/api/admin/withdrawals/${id}?${params.toString()}`,
+        { status: 'Paid' },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {})
+          }
+        }
+      );
+
+      if (res.status === 200 || res.data.success) {
+        Swal.fire('Success!', 'Withdrawal Approved & marked as Paid', 'success');
+        fetchData();
+      } else {
+        Swal.fire('Failed!', res.data?.message || 'Status update failed', 'error');
+      }
+    } catch (err) {
+      console.error(err);
+      Swal.fire('Error!', err.response?.data?.message || 'Server connection error!', 'error');
+    }
+  };
 
   const submit = async (e) => {
     e.preventDefault();
@@ -229,14 +281,22 @@ export function WithdrawalForm({ onSuccess }) {
     <div className="w-full min-h-screen bg-[#F8F9FA] px-2 md:px-4 py-6 space-y-8 font-sans text-gray-900">
       
       <div className="w-full">
-        <h1 className="text-3xl font-extrabold tracking-tight text-gray-900">Withdrawals</h1>
-        <p className="text-sm text-gray-500 mt-1">Manage team withdrawal requests and balances</p>
+        <h1 className="text-3xl font-extrabold tracking-tight text-gray-900">
+          {isTeamLeader ? 'Team Withdrawals' : 'My Withdrawals'}
+        </h1>
+        <p className="text-sm text-gray-500 mt-1">
+          {isTeamLeader 
+            ? 'Manage team withdrawal requests and balances' 
+            : 'Request withdrawal and view your payout history'}
+        </p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full">
         <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm flex flex-col justify-between w-full">
           <div>
-            <p className="text-[11px] font-bold text-gray-400 tracking-wider">TEAM AVAILABLE BALANCE</p>
+            <p className="text-[11px] font-bold text-gray-400 tracking-wider">
+              {isTeamLeader ? 'TEAM AVAILABLE BALANCE' : 'AVAILABLE BALANCE'}
+            </p>
             <div className="flex items-baseline gap-3 mt-2">
               <h2 className="text-4xl font-extrabold text-gray-900">{formatCurrency(balance)}</h2>
             </div>
@@ -329,7 +389,9 @@ export function WithdrawalForm({ onSuccess }) {
       </div>
 
       <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm w-full">
-        <h3 className="text-xl font-bold mb-6 text-gray-900">Team Payout History</h3>
+        <h3 className="text-xl font-bold mb-6 text-gray-900">
+          {isTeamLeader ? 'Team Payout History' : 'My Payout History'}
+        </h3>
         
         <div className="w-full overflow-x-auto">
           <table className="w-full text-left text-sm">
@@ -377,15 +439,36 @@ export function WithdrawalForm({ onSuccess }) {
                       {item.requestTime || item.createdAt ? new Date(item.requestTime || item.createdAt).toLocaleString() : 'N/A'}
                     </td>
                     <td className="px-5 py-4 text-center">
-                      <button 
-                        onClick={() => {
-                          setSelectedWithdrawal(item);
-                          setShowDetailsModal(true);
-                        }}
-                        className="text-gray-400 hover:text-[#00E676] p-1.5 rounded-lg hover:bg-gray-100 cursor-pointer transition-colors"
-                      >
-                        <Eye size={18} />
-                      </button>
+                      <div className="flex items-center justify-center gap-2">
+                        
+                        {/* শুধু Team Leader-এর জন্য Approve বাটন */}
+                        {isTeamLeader && (item.status === 'Pending' || !item.status) && (
+                          <button
+                            onClick={() => handleApprove(item._id || item.id, item)}
+                            className="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition cursor-pointer"
+                          >
+                            <ThumbsUp size={14} /> Approve
+                          </button>
+                        )}
+
+                        {/* Paid হলে ব্যাজ */}
+                        {(item.status === 'Paid' || item.status === 'Approved') && (
+                          <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-lg">
+                            Paid
+                          </span>
+                        )}
+
+                        {/* View বাটন সবসময় */}
+                        <button 
+                          onClick={() => {
+                            setSelectedWithdrawal(item);
+                            setShowDetailsModal(true);
+                          }}
+                          className="text-gray-400 hover:text-[#00E676] p-1.5 rounded-lg hover:bg-gray-100 cursor-pointer transition-colors"
+                        >
+                          <Eye size={18} />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -393,7 +476,9 @@ export function WithdrawalForm({ onSuccess }) {
                 <tr>
                   <td colSpan="8" className="text-center py-16 text-gray-400">
                     <Clock className="mx-auto mb-2 opacity-50" size={28} />
-                    No withdrawal history found for team members
+                    {isTeamLeader 
+                      ? 'No withdrawal history found for team members' 
+                      : 'No withdrawal history found'}
                   </td>
                 </tr>
               )}
@@ -489,6 +574,7 @@ export function WithdrawalForm({ onSuccess }) {
         </div>
       )}
 
+      {/* Details Modal */}
       {showDetailsModal && selectedWithdrawal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm w-full h-full">
           <div className="bg-white rounded-3xl w-full max-w-md p-6 shadow-2xl space-y-4">
@@ -513,3 +599,5 @@ export function WithdrawalForm({ onSuccess }) {
     </div>
   );
 }
+
+export default WithdrawalForm;

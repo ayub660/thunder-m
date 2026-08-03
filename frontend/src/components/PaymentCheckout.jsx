@@ -3,10 +3,8 @@ import axios from 'axios';
 import { useParams, useLocation } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
 
-const API_URL =
-  import.meta.env.MODE === 'production'
-    ? 'https://thunder-m.vercel.app'
-    : 'http://localhost:5000';
+// ========== ENV ==========
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 const PublicCheckout = () => {
   const { invoiceId } = useParams();

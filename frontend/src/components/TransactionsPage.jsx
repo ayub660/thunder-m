@@ -20,9 +20,8 @@ export function TransactionsPage() {
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
 
-  const API_URL = import.meta.env.MODE === 'production' 
-    ? 'https://thunder-m.vercel.app' 
-    : 'http://localhost:5000';
+ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+  const MASTER_ADMIN_EMAIL = import.meta.env.VITE_MASTER_ADMIN_EMAIL || 'admin@mamun.com';
 
   const fetchTransactions = () => {
     setLoading(true);
@@ -43,10 +42,10 @@ export function TransactionsPage() {
     let role = storedUser.role || storedUser.type || localStorage.getItem('role') || '';
 
     if (!role) {
-      role = (userEmail === 'admin@mamun.com') ? 'master_admin' : 'single';
+     role = (userEmail === MASTER_ADMIN_EMAIL) ? 'master_admin' : 'single';
     }
 
-    // ট্রানজেকশন ফেচ করা
+    // Transaction fetch kora
     fetch(`${API_URL}/api/transactions?userId=${encodeURIComponent(userId)}&userEmail=${encodeURIComponent(userEmail)}&role=${encodeURIComponent(role)}`)
       .then(res => res.json())
       .then(data => {

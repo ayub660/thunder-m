@@ -19,9 +19,9 @@ const AmountSelectionPage = () => {
     userId: null
   });
 
-  const API_URL = import.meta.env.MODE === 'production' 
-    ? 'https://thunder-m.vercel.app' 
-    : 'http://localhost:5000';
+  // ========== ENV ==========
+  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+  const PAYMENT_DOMAIN = import.meta.env.VITE_PAYMENT_DOMAIN || 'http://localhost:5173';
 
   useEffect(() => {
     const fetchLinkDetails = async () => {
@@ -123,8 +123,8 @@ const AmountSelectionPage = () => {
     ? linkInfo.name.charAt(0).toUpperCase() + linkInfo.name.slice(1) 
     : 'User';
     
-  const previewImage = `https://thunder-m.vercel.app/og/${encodeURIComponent(linkId)}`;
-  const currentUrl = `https://cash-app-pay.netlify.app/${linkId}`;
+  const previewImage = `${API_URL}/og/${encodeURIComponent(linkId)}`;
+  const currentUrl = `${PAYMENT_DOMAIN}/${linkId}`;
 
   if (fetchingLink) {
     return (

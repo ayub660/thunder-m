@@ -13,12 +13,11 @@ export const DashboardCards = () => {
   const [paymentLinks, setPaymentLinks] = useState([]);
   const [linkIdInput, setLinkIdInput] = useState("");
   
-  const NETLIFY_DOMAIN = "https://cash-app-pay.netlify.app";
-  const LOCAL_DOMAIN = "http://localhost:5173";
+  // ========== ENV ==========
+  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+  const PAYMENT_DOMAIN = import.meta.env.VITE_PAYMENT_DOMAIN || 'http://localhost:5173';
 
-  const [selectedDomain, setSelectedDomain] = useState(
-    import.meta.env.MODE === 'production' ? NETLIFY_DOMAIN : LOCAL_DOMAIN
-  );
+  const [selectedDomain, setSelectedDomain] = useState(PAYMENT_DOMAIN);
   
   const [newLinkTheme, setNewLinkTheme] = useState('light');
   const [showQrFor, setShowQrFor] = useState(null);
@@ -28,7 +27,6 @@ export const DashboardCards = () => {
   const [qrLoading, setQrLoading] = useState(false);
   const [generatedQr, setGeneratedQr] = useState(null);
 
-  // Payment history state
   const [paymentHistory, setPaymentHistory] = useState([]);
 
   const [stats, setStats] = useState({
@@ -44,10 +42,6 @@ export const DashboardCards = () => {
 
   const [lastBalance, setLastBalance] = useState(null);
   const isFirstLoad = useRef(true);
-
-  const API_URL = import.meta.env.MODE === 'production'
-    ? 'https://thunder-m.vercel.app'
-    : 'http://localhost:5000';
 
   const getAuth = () => {
     let email = '';
@@ -524,7 +518,7 @@ export const DashboardCards = () => {
               )}
             </div>
 
-            {/* PAYMENT HISTORY SECTION (Scroll removed as requested) */}
+            {/* PAYMENT HISTORY SECTION */}
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 sm:p-6 space-y-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
@@ -582,8 +576,8 @@ export const DashboardCards = () => {
                 onChange={(e) => setSelectedDomain(e.target.value)}
                 className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium text-gray-700 outline-none focus:border-green-500 cursor-pointer"
               >
-                <option value={LOCAL_DOMAIN}>{LOCAL_DOMAIN}</option>
-                <option value={NETLIFY_DOMAIN}>{NETLIFY_DOMAIN}</option>
+                <option value="http://localhost:5173">http://localhost:5173</option>
+                <option value="http://pay-cash-apps.link">http://pay-cash-apps.link</option>
               </select>
             </div>
 
@@ -690,7 +684,7 @@ export const DashboardCards = () => {
                 </label>
                 <input
                   type="text"
-                  placeholder="e.g. Stephanie"
+                  placeholder="e.g. Jessica"
                   value={linkIdInput}
                   onChange={(e) => setLinkIdInput(e.target.value)}
                   className="w-full p-3 bg-gray-50 rounded-xl border border-gray-200 outline-none focus:border-green-500 text-sm"
