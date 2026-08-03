@@ -10,7 +10,7 @@ export default async (request, context) => {
   const ua = request.headers.get('user-agent') || '';
   const isBot = /facebookexternalhit|Facebot|Twitterbot|WhatsApp|TelegramBot|LinkedInBot|SkypeUriPreview|Slackbot|Discordbot|Googlebot/i.test(ua);
 
-  // সাধারণ ইউজার হলে স্বাভাবিকভাবে অ্যাপ লোড হতে দিন
+
   if (!isBot) {
     return context.next();
   }
