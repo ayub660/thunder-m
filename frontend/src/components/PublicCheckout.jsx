@@ -49,9 +49,7 @@ const PublicCheckout = () => {
       setLoading(true);
       setError("");
       try {
-        const res = await axios.get(
-          `${API_URL}/api/transactions/${invoiceId}`
-        );
+        const res = await axios.get(`${API_URL}/api/transactions/${invoiceId}`);
         const tx = res.data?.transaction || res.data;
 
         if (!tx || (!tx.invoiceId && !tx.amount && !tx.bolt11)) {
@@ -173,14 +171,12 @@ const PublicCheckout = () => {
   }
 
   return (
-    <div className="min-h-screen bg-[#F5F5F5] flex flex-col items-center justify-center py-10 px-4 font-sans select-none">
-      {/* Header: বামে $ logo, ডানে Secure */}
-      <header className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between bg-white px-5 py-3 shadow-sm">
-        {/* বাম পাশে $ logo */}
+    <div className="min-h-screen bg-[#F5F5F5] flex flex-col items-center justify-center py-6 px-4 font-sans select-none overflow-x-hidden">
+      {/* Header */}
+      <header className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between bg-white px-4 sm:px-5 py-3 shadow-sm">
         <div className="w-9 h-9 rounded-full bg-[#00D54B] flex items-center justify-center text-white font-black text-base">
           $
         </div>
-        {/* ডান পাশে Secure */}
         <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-green-50 text-green-700 border border-green-200">
           <svg
             className="w-3.5 h-3.5 text-green-600"
@@ -198,33 +194,34 @@ const PublicCheckout = () => {
       </header>
 
       {/* White Card */}
-      <div className="bg-white rounded-[28px] shadow-xl w-full max-w-[380px] flex flex-col items-center pt-9 pb-7 px-7 mt-14">
+      <div className="bg-white rounded-[24px] sm:rounded-[28px] shadow-xl w-full max-w-[380px] flex flex-col items-center pt-8 pb-6 px-5 sm:px-7 mt-16 sm:mt-14">
         <p className="text-[13px] font-semibold tracking-wide text-gray-400 mb-1">
           Scan or tap to pay
         </p>
 
-        <h1 className="text-[44px] leading-none font-black text-gray-900 mb-6 tracking-tight">
+        <h1 className="text-[38px] sm:text-[44px] leading-none font-black text-gray-900 mb-5 sm:mb-6 tracking-tight">
           ${Number(amount).toFixed(2)}
         </h1>
 
-        {/* QR — বড় */}
-        <div className="relative w-[3500px] h-[350px] flex items-center justify-center mb-5">
+        {/* QR Code - Fixed width (এখানেই মূল সমস্যা ছিল) */}
+        <div className="relative w-full max-w-[280px] aspect-square flex items-center justify-center mb-5">
           {loading ? (
             <div className="h-11 w-11 border-4 border-[#00D54B] border-t-transparent rounded-full animate-spin" />
           ) : getQrValue() ? (
             <>
               <QRCodeSVG
                 value={getQrValue()}
-                size={280}
+                size={260}
                 bgColor="#ffffff"
                 fgColor="#000000"
                 level="M"
                 includeMargin={false}
+                className="w-full h-full max-w-[260px]"
               />
               {/* Center CashApp $ */}
               <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                <div className="bg-[#00D54B] w-[72px] h-[72px] rounded-[16px] shadow-md border-[3px] border-white flex items-center justify-center">
-                  <span className="text-white text-[36px] font-black leading-none">
+                <div className="bg-[#00D54B] w-14 h-14 sm:w-[72px] sm:h-[72px] rounded-[14px] sm:rounded-[16px] shadow-md border-[3px] border-white flex items-center justify-center">
+                  <span className="text-white text-2xl sm:text-[36px] font-black leading-none">
                     $
                   </span>
                 </div>
@@ -238,19 +235,19 @@ const PublicCheckout = () => {
         </div>
 
         <p className="text-gray-600 font-medium text-[15px] flex items-center gap-2 pointer-events-none select-none">
-    <span
-      className="w-2.5 h-2.5 rounded-full"
-      style={{ animation: "waitBlink 1s ease-in-out infinite" }}
-    />
-    Waiting for payment.
-  </p>
+          <span
+            className="w-2.5 h-2.5 rounded-full"
+            style={{ animation: "waitBlink 1s ease-in-out infinite" }}
+          />
+          Waiting for payment.
+        </p>
 
-  <style>{`
-    @keyframes waitBlink {
-      0%, 100% { background-color: #ffffff; border: 1px solid #86efac; }
-      50% { background-color: #4ade80; border: 1px solid #4ade80; }
-    }
-  `}</style>
+        <style>{`
+          @keyframes waitBlink {
+            0%, 100% { background-color: #ffffff; border: 1px solid #86efac; }
+            50% { background-color: #4ade80; border: 1px solid #4ade80; }
+          }
+        `}</style>
 
         {isMobile && !loading && getQrValue() && countdown > 0 && (
           <p className="text-gray-400 text-xs mt-1.5">
@@ -266,14 +263,16 @@ const PublicCheckout = () => {
       </div>
 
       {/* Pay now button */}
-      <div className="w-full max-w-[380px] mt-5">
+      <div className="w-full max-w-[380px] mt-5 px-1">
         <button
           onClick={handleCashAppRedirect}
           disabled={loading || !paymentData}
-          className="w-full h-[56px] rounded-full bg-[#00D54B] text-white font-bold flex items-center justify-center gap-2 shadow-lg shadow-green-200 hover:bg-[#00c244] active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50"
+          className="w-full h-[52px] sm:h-[56px] rounded-full bg-[#00D54B] text-white font-bold flex items-center justify-center gap-2 shadow-lg shadow-green-200 hover:bg-[#00c244] active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50"
         >
           <span className="text-white text-xl font-black">$</span>
-          <span className="text-[17px] font-bold tracking-tight">Pay now</span>
+          <span className="text-[16px] sm:text-[17px] font-bold tracking-tight">
+            Pay now
+          </span>
           <span className="bg-white/25 text-white text-[10px] font-black uppercase px-2 py-0.5 rounded-md tracking-wider ml-1">
             RECOMMENDED
           </span>
