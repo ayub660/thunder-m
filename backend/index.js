@@ -1793,45 +1793,7 @@ app.get('/i/:linkId/status', async (req, res) => {
   }
 });
 
-// ========== OG / SHARE PREVIEW ==========
-app.get('/og/:username', async (req, res) => {
-  try {
-    const { username } = req.params;
-    let linkData = null;
-    if (paymentLinksCollection) {
-      linkData = await paymentLinksCollection.findOne({
-        $or: [{ name: username }, { linkId: username }, { username: username }]
-      });
-    }
 
-    const name = (linkData?.name || username || 'Pay').toString();
-    const theme = (linkData?.theme || linkData?.template || 'light').toString().toLowerCase();
-    const isGreen = theme === 'green';
-    const bg = isGreen ? '#00D54B' : '#F4F4F4';
-    const text = isGreen ? '#FFFFFF' : '#111111';
-    const card = isGreen ? '#00C244' : '#FFFFFF';
-    const accent = isGreen ? '#FFFFFF' : '#00D54B';
-    const dollarColor = isGreen ? '#00D54B' : '#FFFFFF';
-    const displayName = name.charAt(0).toUpperCase() + name.slice(1);
-
-    const svg = `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
-  <rect width="1200" height="630" fill="${bg}"/>
-  <rect x="80" y="80" width="1040" height="470" rx="40" fill="${card}"/>
-  <circle cx="600" cy="250" r="70" fill="${accent}"/>
-  <text x="600" y="278" text-anchor="middle" font-size="80" font-weight="900" font-family="Arial,Helvetica,sans-serif" fill="${dollarColor}">$</text>
-  <text x="600" y="380" text-anchor="middle" font-size="52" font-weight="800" font-family="Arial,Helvetica,sans-serif" fill="${text}">Pay ${displayName}</text>
-  <text x="600" y="440" text-anchor="middle" font-size="26" font-family="Arial,Helvetica,sans-serif" fill="${isGreen ? '#E8FFF0' : '#666666'}">Send secure payment via Cash App</text>
-</svg>`;
-
-    res.setHeader('Content-Type', 'image/svg+xml');
-    res.setHeader('Cache-Control', 'public, max-age=300');
-    return res.send(svg);
-  } catch (err) {
-    console.error('OG image error:', err);
-    return res.status(500).send('Error');
-  }
-});
 
 app.get('/api/team-leader/withdrawals', async (req, res) => {
   try {
@@ -1878,6 +1840,46 @@ app.get('/api/team-leader/withdrawals', async (req, res) => {
   } catch (err) {
     console.error("Team withdrawals error:", err);
     res.status(500).json({ message: "Server error" });
+  }
+});
+
+// ========== OG / SHARE PREVIEW ==========
+app.get('/og/:username', async (req, res) => {
+  try {
+    const { username } = req.params;
+    let linkData = null;
+    if (paymentLinksCollection) {
+      linkData = await paymentLinksCollection.findOne({
+        $or: [{ name: username }, { linkId: username }, { username: username }]
+      });
+    }
+
+    const name = (linkData?.name || username || 'Pay').toString();
+    const theme = (linkData?.theme || linkData?.template || 'light').toString().toLowerCase();
+    const isGreen = theme === 'green';
+    const bg = isGreen ? '#00D54B' : '#F4F4F4';
+    const text = isGreen ? '#FFFFFF' : '#111111';
+    const card = isGreen ? '#00C244' : '#FFFFFF';
+    const accent = isGreen ? '#FFFFFF' : '#00D54B';
+    const dollarColor = isGreen ? '#00D54B' : '#FFFFFF';
+    const displayName = name.charAt(0).toUpperCase() + name.slice(1);
+
+    const svg = `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <rect width="1200" height="630" fill="${bg}"/>
+  <rect x="80" y="80" width="1040" height="470" rx="40" fill="${card}"/>
+  <circle cx="600" cy="250" r="70" fill="${accent}"/>
+  <text x="600" y="278" text-anchor="middle" font-size="80" font-weight="900" font-family="Arial,Helvetica,sans-serif" fill="${dollarColor}">$</text>
+  <text x="600" y="380" text-anchor="middle" font-size="52" font-weight="800" font-family="Arial,Helvetica,sans-serif" fill="${text}">Pay ${displayName}</text>
+  <text x="600" y="440" text-anchor="middle" font-size="26" font-family="Arial,Helvetica,sans-serif" fill="${isGreen ? '#E8FFF0' : '#666666'}">Send secure payment via Cash App</text>
+</svg>`;
+
+    res.setHeader('Content-Type', 'image/svg+xml');
+    res.setHeader('Cache-Control', 'public, max-age=300');
+    return res.send(svg);
+  } catch (err) {
+    console.error('OG image error:', err);
+    return res.status(500).send('Error');
   }
 });
 
